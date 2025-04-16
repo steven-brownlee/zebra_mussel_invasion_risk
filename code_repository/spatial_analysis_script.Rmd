@@ -61,8 +61,8 @@ library(paletteer)
 library(ggnewscale)
 library(terra)
 library(tidyterra)
+library(nngeo)
 library(imputeTS)
-
 ```
 
 # Set up Python
@@ -88,7 +88,7 @@ reticulate::py_install(packages = c('xarray', 'dask', 'netCDF4', 'bottleneck',
 
 ```
 
-# Import common files
+# Import common files, process
 
 ```{r}
 
@@ -96,7 +96,22 @@ bc_bbox <- vect('auxiliary_files/bc_bbox.gpkg')
 
 cci_lakes_outline <- vect('auxiliary_files/cci_lakes_shapefile.gpkg')
 
-cci_lakes_outline_sf <- read_sf('auxiliary_files/cci_lakes_shapefile.gpkg')
+cci_lakes_outline_sf <- read_sf('auxiliary_files/cci_lakes_shapefile.gpkg') %>% 
+  st_make_valid()
+
+wwf_glwd_1 <- read_sf('downloads/WWF_GLWD_level1/glwd_1.shp') %>% 
+  st_set_crs(4326) %>% 
+  select(LAKE_NAME) %>% 
+  st_make_valid()
+
+cci_lakes_joined <- st_join(cci_lakes_outline_sf, wwf_glwd_1)
+re
+
+cci_lakes_name_corrected <- cci_lakes_joined %>%
+  mutate(name = coalesce(name, LAKE_NAME)) %>% 
+  select(name, id)
+
+#write_sf(cci_lakes_name_corrected, 'auxiliary_files/cci_lakes_corrected.gpkg')
 
 ```
 
@@ -430,14 +445,15 @@ for (i in 1:100) {
 
 ```{r}
 
-cci_lakes_filtered <- cci_lakes_outline_sf %>% 
-  select(id, name) %>% 
-  st_make_valid()
+cci_lakes_name_corrected <- read_sf('auxiliary_files/cci_lakes_corrected.gpkg') %>% 
+  st_transform(crs = 4087) %>% 
+  st_buffer(dist = 100)
 
 cci_slices <- list.files('cci_lakes_slices/', 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
+
 for (i in 1:100) {
   ###
   
@@ -445,10 +461,14 @@ for (i in 1:100) {
   
   int_slice <- readRDS(cci_slices[ival]) %>% 
     st_as_sf(coords = c('x', 'y'),
-             crs = 4326)
+             crs = 4326) %>% 
+    st_transform(4087)
   
-  int_slice <- st_join(int_slice, cci_lakes_filtered)
-  
+  int_slice <- st_join(int_slice, cci_lakes_name_corrected) %>% 
+        mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>% 
+    st_drop_geometry()
+    
   filename <- paste0('cci_lakes_slices_labelled/cci_slice_labelled_', ival, '.rds')
   
   write_rds(int_slice, filename)
@@ -456,69 +476,213 @@ for (i in 1:100) {
   print(paste('Completed:', ival, 'of', 100))
 }
 
-cci_lakes_labelled <- list.files('cci_slices_filled/', 
+cci_lakes_labelled <- list.files('cci_lakes_slices_labelled/', 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE) %>% 
   lapply(readRDS) %>% 
-  bind_rows()
+  bind_rows() %>% 
+  mutate(name = ifelse(is.na(name), 'no_data', name)) %>% 
+  mutate(name = str_to_lower(name))
 
-total_lake_length <- length(unique(cci_lakes_labelled$name))
+name_list <- total_lake_length <- unique(cci_lakes_labelled$name)
+
+for (i in 1:40) {
+  
+  ival <- eval(i)
+  
+  label_filter <- cci_lakes_labelled %>% 
+    filter(name == name_list[ival])
+  
+  filename <- paste0('cci_lakes_by_lake/cci_', name_list[ival], '.rds')
+  
+  write_rds(label_filter, filename)
+  
+  print(paste('Completed:', ival, 'of', 40))
+}
+
+
 
 ```
 
 
-## ~3a.) Fill time series gaps
+# 3a.) Fill time series gaps
 
 ```{r}
-cci_slices <- list.files('cci_lakes_slices/', 
+
+# First pass, using k-nearest neighbour filling
+
+date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'day') 
+
+
+rds_interior <- ok
+
+
+nn_filler <- function(sequence) {
+  
+  
+  outer_template <- tibble(x = numeric(),
+                         y = numeric(),
+                         point_id = numeric(),
+                         date_id = numeric(),
+                         date = date(),
+                         chla_mean = numeric(),
+                         chla_uncertainty = numeric(),
+                         lake_surface_water_temperature = numeric(),
+                         lswt_uncertainty = numeric(),
+                         lswt_quality_level = numeric(),
+                         turbidity_mean = numeric(),
+                         turbidity_uncertainty = numeric(),
+                         group_id = numeric(),
+                         name = character(),
+                         id = numeric())
+  
+  outer_template$date <- as.Date(outer_template$date)
+  
+  
+  for (i in sequence) {
+    ival = eval(i)
+    date_selection <- date_sequence[ival]
+    rds_filtered <- rds_interior %>% 
+      filter(date == date_selection)
+    point_id_filtered <- unique(rds_filtered$point_id)
+    point_id_length <- length(point_id_filtered)
+    
+    for (j in 1:eval(point_id_length)) {
+      jval <- eval(j)
+      rds_point_data <- rds_filtered %>% 
+        filter(point_id == point_id_filtered[j])
+      rds_point <- rds_filtered %>% 
+        filter(point_id == point_id_filtered[j]) %>% 
+        st_as_sf(coords = c('x', 'y'),
+               crs = 4087) %>% 
+        select(geometry)
+      
+      rds_comparison <- rds_filtered %>% 
+        filter(point_id != point_id_filtered[j]) %>% 
+            st_as_sf(coords = c('x', 'y'),
+               crs = 4087)
+      
+      rds_nn <- suppressWarnings(suppressMessages(st_join(rds_point, 
+                                                        rds_comparison, 
+                                                        st_nn, k = 5))) %>% 
+        mutate(grouping_id = 1)
+    
+      
+      rds_nn_summ <- rds_nn %>% 
+        group_by(grouping_id) %>% 
+        summarize(chla_mean = mean(chla_mean),
+                lake_surface_water_temperature = mean(lake_surface_water_temperature),
+                turbidity_mean = mean(turbidity_mean)) %>% 
+        st_drop_geometry()
+      
+      eval_criteria <- rds_point_data %>% 
+        select(chla_mean, lake_surface_water_temperature,
+                                          turbidity_mean) 
+      
+      if (is.na(eval_criteria$chla_mean) == TRUE) {
+        rds_point_data$chla_mean <- rds_nn_summ$chla_mean
+        }
+      
+      if (is.na(eval_criteria$lake_surface_water_temperature) == TRUE) {
+        rds_point_data$lake_surface_water_temperature <- 
+          rds_nn_summ$lake_surface_water_temperature
+        }
+      if (is.na(eval_criteria$turbidity_mean) == TRUE) {
+          rds_point_data$turbidity_mean <- rds_nn_summ$turbidity_mean
+        }
+      
+      outer_template <- bind_rows(outer_template, rds_point_data)
+
+    }
+}
+   return(outer_template)
+}
+
+###
+
+cci_l_l <- list.files('cci_lakes_by_lake/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+###
+
+plan(callr, workers = 6)
+options(future.globals.maxSize = 1.6e+10)
+
+for (i in length(cci_l_l)) {
+  ival = eval(i)
+  lake_rds <- read_rds(cci_l_l[ival])
+  filename <- paste0('cci_knn/', basename(cci_l_l[ival]), '.rds')
+  
+  lake_filled_knn <- future_map(1:1827,
+                          ~nn_filler(.x)) %>% 
+    bind_rows()
+  
+  write_rds(lake_filled_knn, filename)
+  print(paste('Completed:', cci_l_l[ival]))
+  
+}
+
+
+
+ok_filled <- future_map(1:1827,
+                          ~nn_filler(.x)) %>% 
+  bind_rows()
+
+
+# Second pass, using imputeTS
+
+
+cci_knn <- list.files('cci_knn/', 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
 
 
-for (i in 1:100) {
+for (i in 1:length(cci_knn)) {
   ###
   
   ival <- eval(i)
   
-  int_slice <- readRDS(cci_slices[ival]) 
+  int_slice <- readRDS(cci_knn[ival]) 
   
   ##
   
-  chla <- int_slice %>% select(x, y, date, chla_mean)
+  int_slice_points <- unique(int_slice$point_id)
   
-  temp <- int_slice %>% select(x, y, date, lake_surface_water_temperature)
+  int_slice_length <- length(int_slice_points)
   
-  turb <- int_slice %>% select(x, y, date, turbidity_mean)
+  ##
+
+  chla <- int_slice %>% 
+    select(x, y, point_id, date, chla_mean)
   
-  date_frame <- int_slice %>% select(x, y, date)
+  temp <- int_slice %>% 
+    select(x, y, point_id, date, lake_surface_water_temperature)
+  
+  turb <- int_slice %>% 
+    select(x, y, point_id, point_id, date, turbidity_mean)
+  
+  date_frame <- int_slice %>% 
+    select(-chla_mean, -lake_surface_water_temperature, -turbidity_mean)
   
   ##
   
   chla <- chla %>% 
     group_by(x, y) %>% 
-    group_modify(~ as.data.frame(na_ma(.x)), 
-                 k = 4,
-                 maxgap = 1826) # 1-1827, the length of the time series
-  
-  print(paste('Completed data frame:', ival, 'chla'))
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine')
   
   temp <- temp %>% 
     group_by(x, y) %>% 
-    group_modify(~ as.data.frame(na_ma(.x)), 
-                 k = 4,
-                 maxgap = 1826) # 1-1827, the length of the time series
-  
-   print(paste('Completed data frame:', ival, 'temp'))
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine') 
   
   turb <- turb %>% 
     group_by(x, y) %>% 
-    group_modify(~ as.data.frame(na_ma(.x)), 
-                 k = 4,
-                 maxgap = 1826) # 1-1827, the length of the time series
-  
-  print(paste('Completed data frame:', ival, 'turb'))
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine')
 
   assembly_frame <- left_join(date_frame, chla)
   
@@ -528,7 +692,7 @@ for (i in 1:100) {
   
   ##
   
-  filename <- paste0('cci_lakes_slices_filled/cci_slice_filled_', ival, '.rds')
+  filename <- paste0('cci_interpolated/', ival, '.rds')
   
   write_rds(assembly_frame, filename)
   
