@@ -1,0 +1,118 @@
+# Figure generation script, invasion risk
+
+# ~~~~ Notes
+
+-------------------------------------------------------------------------------
+
+# 1.) Contact info
+
+Contact: Steven Brownlee
+Email: steven.fr.brownlee@gmail.com
+Date last revised: March 17 2025
+
+-------------------------------------------------------------------------------
+
+# 2.) Session info
+
+## Steven 
+
+R version 4.4.3 (2025-02-28)
+Platform: x86_64-redhat-linux-gnu
+Running under: Nobara Linux 41 (GNOME Edition)
+
+Matrix products: default
+BLAS/LAPACK: FlexiBLAS OPENBLAS-OPENMP;  LAPACK version 3.12.0
+
+locale:
+ [1] LC_CTYPE=en_CA.UTF-8      LC_NUMERIC=C              LC_TIME=en_CA.utf8        LC_COLLATE=en_CA.UTF-8   
+ [5] LC_MONETARY=en_CA.utf8    LC_MESSAGES=en_CA.UTF-8   LC_PAPER=en_CA.utf8       LC_NAME=C                
+ [9] LC_ADDRESS=C              LC_TELEPHONE=C            LC_MEASUREMENT=en_CA.utf8 LC_IDENTIFICATION=C      
+
+time zone: America/Vancouver
+tzcode source: system (glibc)
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] ggtext_0.1.2      cubelyr_1.0.2     ggdist_3.3.2      BAMMtools_2.1.12  ape_5.8-1         ambient_1.0.2    
+ [7] colorspace_2.1-1  ggpattern_1.1.4   patchwork_1.3.0   ggnewscale_0.5.0  tidyterra_0.7.0   terra_1.8-21     
+[13] rcartocolor_2.1.1 extrafont_0.19    lubridate_1.9.4   forcats_1.0.0     stringr_1.5.1     dplyr_1.1.4      
+[19] purrr_1.0.4       readr_2.1.5       tidyr_1.3.1       tibble_3.2.1      ggplot2_3.5.1     tidyverse_2.0.0  
+[25] ncmeta_0.4.0      stars_0.6-8       sf_1.0-19         abind_1.4-8      
+
+loaded via a namespace (and not attached):
+ [1] gtable_0.3.6         xfun_0.50            caTools_1.18.3       lattice_0.22-6       tzdb_0.4.0          
+ [6] bitops_1.0-9         vctrs_0.6.5          tools_4.4.3          generics_0.1.3       parallel_4.4.3      
+[11] proxy_0.4-27         pkgconfig_2.0.3      KernSmooth_2.23-26   distributional_0.5.0 lifecycle_1.0.4     
+[16] compiler_4.4.3       farver_2.1.2         gplots_3.2.0         munsell_0.5.1        codetools_0.2-20    
+[21] htmltools_0.5.8.1    class_7.3-23         yaml_2.3.10          Rttf2pt1_1.3.12      pillar_1.10.1       
+[26] extrafontdb_1.0      classInt_0.4-11      RNetCDF_2.9-2        nlme_3.1-167         gtools_3.9.5        
+[31] tidyselect_1.2.1     digest_0.6.37        stringi_1.8.4        fastmap_1.2.0        grid_4.4.3          
+[36] cli_3.6.4            magrittr_2.0.3       e1071_1.7-16         withr_3.0.2          scales_1.3.0        
+[41] timechange_0.3.0     rmarkdown_2.29       hms_1.1.3            evaluate_1.0.3       knitr_1.49          
+[46] rlang_1.1.5          gridtext_0.1.5       Rcpp_1.0.14          glue_1.8.0           DBI_1.2.3           
+[51] xml2_1.3.6           rstudioapi_0.17.1    R6_2.6.1             units_0.8-5  
+
+-------------------------------------------------------------------------------
+
+# 3.) R library setup
+
+Optional code to install packages if not already installed:
+
+```{r}
+#install.packages(c('stars', 'ncmeta', 'tidyverse', 'extrafont', 'sf', 'rcartocolor',  
+#'terra', 'tidyterra', 'ggnewscale', 'patchwork', 'ggpattern', 'colorspace',
+#'ambient', 'BAMMtools', 'ggdist', 'cubelyr', 'ggtext'))
+
+```
+
+```{r}
+library(stars)
+library(ncmeta)
+library(tidyverse)
+library(extrafont)
+library(svglite)
+library(sf)
+library(rcartocolor)
+library(terra)
+library(tidyterra)
+library(ggnewscale)
+library(patchwork)
+library(ggpattern)
+library(colorspace)
+library(ambient)
+library(BAMMtools)
+library(ggdist)
+library(cubelyr)
+library(ggtext)
+library(rphylopic)
+library(patchwork)
+library(googledrive)
+library(future)
+library(future.callr)
+library(purrr)
+library(furrr)
+library(paletteer)
+
+```
+
+
+-------------------------------------------------------------------------------
+
+# 4.) Directory setup
+
+## Steven
+
+```{r setup,include=FALSE}
+knitr::opts_knit$set(root.dir = '/home/steven/Documents/workspace/thesis/ch1/gis_data/')
+```
+
+## Set path for export of figures:
+
+```{r}
+figure_path = 'figures/'
+```
+
+-------------------------------------------------------------------------------
+
