@@ -514,10 +514,6 @@ for (i in 1:40) {
 
 date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'day') 
 
-
-rds_interior <- ok
-
-
 nn_filler <- function(sequence) {
   
   
@@ -610,7 +606,7 @@ cci_l_l <- list.files('cci_lakes_by_lake/',
 plan(callr, workers = 6)
 options(future.globals.maxSize = 1.6e+10)
 
-for (i in length(cci_l_l)) {
+for (i in 1:length(cci_l_l)) {
   ival = eval(i)
   lake_rds <- read_rds(cci_l_l[ival])
   filename <- paste0('cci_knn/', basename(cci_l_l[ival]), '.rds')
