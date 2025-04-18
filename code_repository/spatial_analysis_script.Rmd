@@ -514,7 +514,7 @@ for (i in 1:40) {
 
 date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'day') 
 
-nn_filler <- function(sequence) {
+nn_filler <- function(sequence, rds_interior) {
   
   
   outer_template <- tibble(x = numeric(),
@@ -603,16 +603,16 @@ cci_l_l <- list.files('cci_lakes_by_lake/',
                             recursive = TRUE)
 ###
 
-plan(callr, workers = 6)
+plan(callr, workers = 15)
 options(future.globals.maxSize = 1.6e+10)
 
 for (i in 1:length(cci_l_l)) {
   ival = eval(i)
   lake_rds <- read_rds(cci_l_l[ival])
-  filename <- paste0('cci_knn/', basename(cci_l_l[ival]), '.rds')
+  filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
   
   lake_filled_knn <- future_map(1:1827,
-                          ~nn_filler(.x)) %>% 
+                          ~nn_filler(.x, rds_interior = lake_rds)) %>% 
     bind_rows()
   
   write_rds(lake_filled_knn, filename)
