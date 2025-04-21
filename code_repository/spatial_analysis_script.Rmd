@@ -105,7 +105,6 @@ wwf_glwd_1 <- read_sf('downloads/WWF_GLWD_level1/glwd_1.shp') %>%
   st_make_valid()
 
 cci_lakes_joined <- st_join(cci_lakes_outline_sf, wwf_glwd_1)
-re
 
 cci_lakes_name_corrected <- cci_lakes_joined %>%
   mutate(name = coalesce(name, LAKE_NAME)) %>% 
@@ -506,7 +505,7 @@ for (i in 1:40) {
 ```
 
 
-# 3a.) Fill time series gaps
+# 4.) Fill time series gaps
 
 ```{r}
 
@@ -609,6 +608,7 @@ options(future.globals.maxSize = 1.6e+10)
 for (i in 1:length(cci_l_l)) {
   ival = eval(i)
   lake_rds <- read_rds(cci_l_l[ival])
+  #lake_rds <- lake_rds %>% distinct(point_id, date, .keep_all = TRUE)
   filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
   
   lake_filled_knn <- future_map(1:1827,
@@ -619,13 +619,7 @@ for (i in 1:length(cci_l_l)) {
   print(paste('Completed:', cci_l_l[ival]))
   
 }
-
-
-
-ok_filled <- future_map(1:1827,
-                          ~nn_filler(.x)) %>% 
-  bind_rows()
-
+  
 
 # Second pass, using imputeTS
 
@@ -688,17 +682,158 @@ for (i in 1:length(cci_knn)) {
   
   ##
   
-  filename <- paste0('cci_interpolated/', ival, '.rds')
+  filename <- paste0('cci_interpolated/', basename(cci_knn[ival]))
   
   write_rds(assembly_frame, filename)
   
-  print(paste('Completed:', ival, 'of', 100))
+  print(paste('Completed:', ival, 'of', length(cci_knn)))
 }
 
 
-test <- int_slice %>% select(x, y) %>% distinct(x, y) %>% st_as_sf(coords = c('x', 'y'), crs = 4326)
-
-write_sf(test, '/home/steven/Downloads/test.gpkg')
+ok <- readRDS('cci_interpolated/cci_okanagan.rds') %>% 
+  select(x, y, date, chla_mean, turbidity_mean, lake_surface_water_temperature)
 
 ```
+
+#5.) Import calcium data
+
+```{r}
+
+### import Guerin et al 2024 data
+
+calcium_data <- read_csv('downloads/guerin_et_al_2024_data/dryad/site-date_calcium_985955.csv') %>% 
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+           crs = 4326) %>% 
+  st_transform(crs = 4087)
+
+
+## Retrieve assembly frame
+
+cci_assembly <- list.files('cci_interpolated/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+outer_frame <- tibble(point_id = numeric(),
+                      x = numeric(),
+                      y = numeric())
+
+for (i in 1:length(cci_assembly)) {
+  ival = eval(i)
+  int_assembly <- read_rds(cci_assembly[ival]) %>% 
+    select(x, y, point_id) %>% 
+    distinct(point_id, .keep_all = TRUE)
+  outer_frame <- bind_rows(outer_frame, int_assembly)
+  print(paste('Completed:', ival, 'of', length(cci_assembly)))
+}
+
+outer_frame_sf <- outer_frame %>% st_as_sf(coords = c('x', 'y'),
+                                           crs = 4087) %>% 
+  st_transform(crs = 3005)
+
+## Import CCI lakes shapefile, match to frame
+
+cci_lakes_shapefile <- read_sf('auxiliary_files/cci_lakes_corrected.gpkg') %>% 
+  st_transform(st_crs(4087))
+
+test <- st_intersection(calcium_data, cci_lakes_shapefile)
+
+
+cci_lakes_test <- st_join(cci_lakes_shapefile, calcium_data) %>% 
+ drop_na() 
+
+cci_lakes_list <- unique(cci_lakes_test$name)
+
+cci_lakes_shapefile <- cci_lakes_shapefile %>% filter(name %in% cci_lakes_list)
+
+write_sf(cci_lakes_shapefile, 'auxiliary_files/cci_calcium_matchup_polygon.gpkg')
+
+###
+
+
+
+
+
+
+ems_lake_data <- list.files(path = 'in_situ_measurements/bc_lake_monitoring_program/lake_monitoring_raw_data/', 
+                            pattern = '*.csv', 
+                            full.names = TRUE) %>% 
+  lapply(read_csv, col_select = c(PARAMETER, 
+                                  COLLECTION_START,
+                                  RESULT,
+                                  UNIT,
+                                  UPPER_DEPTH,
+                                  LOWER_DEPTH,
+                                  Level,
+                                  depthsUploaded,
+                                  Latitude,
+                                  Longitude,
+                                  WSGZTTDNM,)) %>% 
+  bind_rows()
+
+ems_lake_data <- ems_lake_data %>% 
+  mutate(id = rownames(ems_lake_data))
+
+# Correct missing negative sign in longitude data in Shuswap Lake sites
+
+ems_lake_data <- ems_lake_data %>% mutate(Longitude = -1*abs(Longitude))
+
+ems_sf <- st_as_sf(ems_lake_data, 
+                   coords = c('Longitude', 'Latitude'),
+                   crs = 4326)
+
+###
+
+# Filter variables of interest
+
+ems_vars <- ems_sf %>% filter(PARAMETER == 'Calcium Total' | 
+                                   PARAMETER == 'Calcium Dissolved' |
+                                   PARAMETER == 'Specific Conductivity-Field' |
+                                   PARAMETER == 'Turbidity' |
+                                   PARAMETER == 'Chlorophyll A' |
+                                   PARAMETER == 'Temperature-Field')
+
+# Retrieve epilimnion results
+
+ems_vars <- ems_vars %>% filter(Level == 'Epilimnion')
+
+# Filter data for lakes that have matching CCI datasets
+
+
+ems_vars <- ems_vars %>% 
+  st_transform(crs = st_crs(3005))
+
+ems_vars <- st_intersection(ems_vars, cci_lakes_shapefile)
+
+ems_vars <- ems_vars %>% 
+  select(PARAMETER, COLLECTION_START, RESULT)
+
+
+# Join EMS data to assembly frame
+
+
+
+
+
+```
+
+# ~~ Supplemental
+
+## Process continental data for calcium
+
+```{r}
+
+  cci_lakes_calcium_matchup_polygon <- read_sf('auxiliary_files/cci_calcium_matchup_polygon.gpkg')
+
+
+  cci_slices <- list.files('cci_lakes_slices/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+  
+  test_rds <- read_rds(cci_slices[1])
+
+
+```
+
 
