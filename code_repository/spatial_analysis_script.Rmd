@@ -833,6 +833,100 @@ ems_vars <- ems_vars %>%
   
   test_rds <- read_rds(cci_slices[1])
 
+  
+### Updated downloads
+  
+path = '/home/steven/Downloads/cci_lakes_download/'
+
+###
+
+prefix_template <- 'https://dap.ceda.ac.uk/neodc/esacci/lakes/data/lake_products/L3S/v2.1/merged_product/'
+
+suffix_template_a <- 'ESACCI-LAKES-L3S-LK_PRODUCTS-MERGED-'
+
+suffix_template_b <- '-fv2.1.0.nc'
+
+###
+
+year_list <- c('2002', '2003', '2004', '2005', '2006', '2007', '2008', 
+               '2009', '2010', '2011', '2012', '2013', '2014', '2015', 
+               '2016', '2017', '2018', '2019', '2020')
+
+month_list <- c('01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12')
+
+month_daylengths <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+day_list <- c( '01',  '02',  '03',  '04',  '05',  '06',  '07',  '08',  '09', 
+               '10', '11', '12', '13',  '14', '15', '16', '17', '18', '19', 
+               '20',  '21', '22', '23', '24', '25', '26', '27', '28', '29', 
+               '30', '31')
+
+comb_date <- paste0(year_list[1], month_list[1], day_list[1])
+
+date_dir <- paste0(year_list[1], '/', month_list[1], '/')
+
+for (i in 1:5) {
+  ival <- eval(i)
+  
+  interior_year <- year_list[ival]
+  
+  for (j in 1:12) {
+    jval <- eval(j)
+    
+    interior_month <- month_list[jval]
+    
+    interior_day_length <- month_daylengths[jval]
+    
+    if (interior_month == '02' & interior_year == '2004') {
+      interior_day_length <- 29
+      print('Leap year!')
+    } 
+    
+    if (interior_month == '02' & interior_year == '2008') {
+      interior_day_length <- 29
+      print('Leap year!')
+    } 
+    
+    if (interior_month == '02' & interior_year == '2012') {
+      interior_day_length <- 29
+      print('Leap year!')
+    } 
+    
+    if (interior_month == '02' & interior_year == '2016') {
+      interior_day_length <- 29
+      print('Leap year!')
+    } 
+    
+    if (interior_month == '02' & interior_year == '2020') {
+      interior_day_length <- 29
+      print('Leap year!')
+    }
+
+    for (k in 1:interior_day_length) {
+      kval <- eval(k)
+      
+      interior_day <- day_list[kval]
+      
+      comb_date <- paste0(interior_year,  interior_month, interior_day )
+      
+      date_dir <- paste0(interior_year, '/', interior_month , '/')
+      
+      filename <- paste0(prefix_template, date_dir, suffix_template_a, comb_date,
+                              suffix_template_b)
+
+      download.file(filename, paste0(path, basename(filename)))
+      
+      print(paste('Completed:', filename))
+      
+    }
+    
+  }
+  
+}
+
+  
+  
+  
 
 ```
 
