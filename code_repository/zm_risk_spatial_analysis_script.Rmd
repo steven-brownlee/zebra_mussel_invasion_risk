@@ -199,6 +199,7 @@ for (i in 1:5) {
 
 ```{r}
 
+
 cci_files <- list.files('cci_lakes_download/', 
                             pattern = '*.nc',
                             full.names = TRUE,
@@ -208,7 +209,7 @@ outdir <- 'cci_lakes_rds/'
 
 xy_outdir <- 'cci_lakes_coords/'
 
-for (i in 1:length(cci_files)) {
+for (i in 1218:length(cci_files)) {
   ival <- eval(i)
   input_file <- cci_files[ival]
   input_filename <- basename(input_file)
@@ -224,137 +225,139 @@ for (i in 1:length(cci_files)) {
   
   interior_terra <- rast(input_file)
   
-  chla_mean <- interior_terra %>% 
+  t_chla_mean <- interior_terra %>% 
   select(chla_mean) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  chla_mean_coords <- chla_mean  %>% 
+  chla_mean_coords <-  t_chla_mean  %>% 
   select(x, y)
   
   ##
   
-  chla_uncertainty <- interior_terra %>% 
+  t_chla_uncertainty <- interior_terra %>% 
   select(chla_uncertainty) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  chla_uncertainty_coords <- chla_uncertainty  %>% 
+  chla_uncertainty_coords <-  t_chla_uncertainty  %>% 
   select(x, y)
   
   ##
   
-  lake_surface_water_temperature <- interior_terra %>% 
+  t_lake_surface_water_temperature <- interior_terra %>% 
   select(lake_surface_water_temperature) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble()
+   as_tibble() %>% 
+    rename(lwst = lake_surface_water_temperature)
   
-  lake_surface_water_temperature_coords <- lake_surface_water_temperature %>% 
+  lake_surface_water_temperature_coords <-  t_lake_surface_water_temperature %>% 
   select(x, y)
   
   ##
   
-  lswt_uncertainty <- interior_terra %>% 
+  t_lswt_uncertainty <- interior_terra %>% 
    select(lswt_uncertainty) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  lswt_uncertainty_coords <- lswt_uncertainty %>% 
+  lswt_uncertainty_coords <-  t_lswt_uncertainty %>% 
    select(x, y)
   
   ##
  
-  lswt_quality_level <- interior_terra %>% 
+  t_lswt_quality_level <- interior_terra %>% 
    select(lswt_quality_level) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  lswt_quality_coords <- lswt_quality_level %>% 
+  lswt_quality_coords <-  t_lswt_quality_level %>% 
     select(x, y) 
   
   ##
   
-  turbidity_mean <- interior_terra %>% 
+  t_turbidity_mean <- interior_terra %>% 
    select(turbidity_mean) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  tm_coords <- turbidity_mean %>% 
+  tm_coords <-  t_turbidity_mean %>% 
    select(x, y)
   
   ##
   
-  turbidity_uncertainty <- interior_terra %>% 
+  t_turbidity_uncertainty <- interior_terra %>% 
    select(turbidity_uncertainty) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  tu_coords <- turbidity_uncertainty %>% 
+  tu_coords <-  t_turbidity_uncertainty %>% 
    select(x, y)
   
   ##
   
-  rw_443 <- interior_terra %>% 
+  t_rw_443 <- interior_terra %>% 
    select(Rw443) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble()
+   as_tibble()%>% 
+  rename(rw_443 = Rw443)
   
-  rw_443_coords <- turbidity_uncertainty %>% 
+  rw_443_coords <-  t_rw_443 %>% 
    select(x, y)
   
   ###
   
-  rw_443_u <- interior_terra %>% 
+  t_rw_443_u <- interior_terra %>% 
    select(Rw443_uncertainty_relative) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble()
+   as_tibble() %>% 
+  rename(rw_443_u = Rw443_uncertainty_relative)
   
-  rw_443_u_coords <- turbidity_uncertainty %>% 
+  rw_443_u_coords <- t_rw_443_u %>% 
    select(x, y)
   
   ###
   
-  rw_547
-  
-   rw_547 <- interior_terra %>% 
+   t_rw_547 <- interior_terra %>% 
    select(Rw547) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble()
+   as_tibble() %>% 
+  rename(rw_547 = Rw547)
   
-   rw_547_coords <- turbidity_uncertainty %>% 
+   rw_547_coords <- t_rw_547  %>% 
    select(x, y)
   
   ###
     
    
-   rw_547_u <- interior_terra %>% 
+   t_rw_547_u <- interior_terra %>% 
    select(Rw547_uncertainty_relative) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble()
+   as_tibble() %>% 
+  rename(rw_547_u = Rw547_uncertainty_relative)
   
-   rw_547_u_coords <- turbidity_uncertainty %>% 
+   rw_547_u_coords <- t_rw_547_u %>% 
    select(x, y)
   
-   
+
+   ### 
   
-   ###
-  
    
-  comb_table <- bind_rows(chla_mean, chla_uncertainty, 
-                        lake_surface_water_temperature, lswt_uncertainty, 
-                        lswt_quality_level, turbidity_mean, turbidity_uncertainty,
-                        rw_443, rw_443_u, rw_547, rw_547_u)
+  comb_table <- bind_rows(t_chla_mean, t_chla_uncertainty, 
+                        t_lake_surface_water_temperature, t_lswt_uncertainty, 
+                        t_lswt_quality_level, t_turbidity_mean, t_turbidity_uncertainty,
+                        t_rw_443, t_rw_443_u, t_rw_547, t_rw_547_u)
   
   coord_template <- bind_rows(chla_mean_coords, chla_uncertainty_coords, 
                               lake_surface_water_temperature_coords, 
@@ -365,28 +368,34 @@ for (i in 1:length(cci_files)) {
   
   ##
   
-  coord_filling <- left_join(coord_template, chla_mean)
+  coord_filling <- left_join(coord_template, t_chla_mean)
   
-  coord_filling <- left_join(coord_filling, chla_uncertainty)
+  coord_filling <- left_join(coord_filling, t_chla_uncertainty)
   
-  coord_filling <- left_join(coord_filling, lake_surface_water_temperature)
+  coord_filling <- left_join(coord_filling, t_lake_surface_water_temperature)
   
-  coord_filling <- left_join(coord_filling, lswt_uncertainty)
+  coord_filling <- left_join(coord_filling, t_lswt_uncertainty)
   
-  coord_filling <- left_join(coord_filling, lswt_quality_level)
+  coord_filling <- left_join(coord_filling, t_lswt_quality_level)
   
-  coord_filling <- left_join(coord_filling, turbidity_mean)
+  coord_filling <- left_join(coord_filling, t_turbidity_mean)
   
-  coord_filling <- left_join(coord_filling, turbidity_uncertainty)
+  coord_filling <- left_join(coord_filling, t_turbidity_uncertainty)
+  
+  coord_filling <- left_join(coord_filling, t_rw_443)
+  
+  coord_filling <- left_join(coord_filling, t_rw_443_u)
+  
+  coord_filling <- left_join(coord_filling, t_rw_547)
+  
+  coord_filling <- left_join(coord_filling, t_rw_547_u)
   
   ##
   
   interior_data_filled <- coord_filling %>%
     mutate(date = composite_date) %>% 
     replace(is.na(.), 0) %>% 
-    mutate(na_test = chla_mean + chla_uncertainty 
-           + lswt_uncertainty + lswt_quality_level 
-           + turbidity_mean + turbidity_uncertainty) %>% 
+    mutate(na_test = chla_mean + chla_uncertainty  + lswt_uncertainty + lswt_quality_level  + lwst + turbidity_mean + turbidity_uncertainty + rw_443 + rw_443_u + rw_547 + rw_547_u) %>% 
     filter(na_test != 0)
   
   # Prep for export 
@@ -396,101 +405,10 @@ for (i in 1:length(cci_files)) {
   write_rds(interior_data_filled, output_filename)
   
   print(paste('Completed:', ival, 'of', length(cci_files)))
+  
+  gc()
 }
   
-
-```
-
-# 3.) Read .rds files, process into stars objects
-
-```{r}
-
-## Read data in to R, collate into one table
-
-cci_data <- list.files('cci_lakes_rds/', 
-                            pattern = '*.rds',
-                            full.names = TRUE,
-                            recursive = TRUE)
-
-cci_data_collated <- lapply(cci_data, readRDS) %>% 
-  bind_rows()
-
-## Filter out unique coordinates, genereate UIDs for each
-
-cci_unique_coordinates <- cci_data_collated %>% 
-  select(x, y) %>% 
-  distinct() %>% 
-  st_as_sf(coords = c('x', 'y'),
-           crs = 4326) %>% 
-    mutate(x = sf::st_coordinates(.)[,1],
-                y = sf::st_coordinates(.)[,2]) %>% 
-  rowid_to_column('point_id') %>% 
-  st_drop_geometry()
-
-## Set up date sequence to pair with coordinates - need 'sequence points' to
-#~ avoid annoying inability to make date columns in empty tibble
-
-date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'day') %>% 
-  as_tibble() %>% 
-  rename(date = value) %>% 
-  rowid_to_column('date_id')
-
-date_sequence_points <- seq(1, nrow(date_sequence), by = 1) %>% 
-  as_tibble() %>% 
-  rename(date_id = value)
-
-## Append time sequences to each coordinate
-
-coord_time_template <- tibble(point_id = numeric(),
-                              x = numeric(),
-                              y = numeric(),
-                              date_id = numeric())
-
-for (i in 1:max(cci_unique_coordinates$point_id)) {
-  ival = eval(i)
-  date_interior <- date_sequence_points %>% mutate(point_id = ival)
-  coord_interior <- cci_unique_coordinates %>% filter(point_id == ival)
-  interior_join <- left_join(coord_interior, date_interior, by = 'point_id')
-  coord_time_template <- bind_rows(coord_time_template, interior_join)
-  print(paste('Completed:', ival, 'of', max(cci_unique_coordinates$point_id)))
-}
-
-write_rds(coord_time_template, 'auxiliary_files/coord_time_template.rds')
-
-coord_time_template <- readRDS('auxiliary_files/coord_time_template.rds')
-
-coord_time_scaffold <- coord_time_template
-
-coord_time_scaffold <- left_join(coord_time_scaffold, date_sequence,
-                                 by = 'date_id')
-
-## Join CCI lakes data to the scaffold
-
-cci_data_collated$date <- dmy(cci_data_collated$date)
-
-coord_time_joined <- left_join(coord_time_scaffold, cci_data_collated,
-                               by = c('x', 'y', 'date')) %>% 
-  select(-na_test)
-
-## Export individual slices
-
-coord_time_joined$group_id <- cut_number(coord_time_joined$point_id, 100)
-
-coord_time_joined$group_id <- as.numeric(coord_time_joined$group_id)
-
-test <- coord_time_joined %>% 
-  filter(group_id == 5)
-
-for (i in 1:100) {
-  ival = eval(i)
-  interior_subset <- coord_time_joined %>% 
-  filter(group_id == ival)
-  filename <- paste0('cci_lakes_slices/cci_slice_', ival, '.rds')
-  write_rds(interior_subset, filename)
-  print(paste('Completed:', ival, 'of', 100))
-  
-}
-
 
 ```
 
@@ -868,10 +786,20 @@ cci_calcium_joined <- left_join(cci_data_collated, bc_joined_calcium,
                                 by = c('point_id', 'date')) 
 #write_rds(cci_calcium_joined, 'auxiliary_files/cci_calcium_joined.rds')
 
+
+
+```
+
+## GAM
+
+```{r}
+
 cci_calcium_joined <- read_rds('auxiliary_files/cci_calcium_joined.rds') %>% 
   select(x, y, date, turbidity_mean, mean, units, area_km)
 
 ```
+
+
 
 # ~~ Supplemental
 
