@@ -224,139 +224,137 @@ for (i in 1:length(cci_files)) {
   
   interior_terra <- rast(input_file)
   
-  t_chla_mean <- interior_terra %>% 
+  chla_mean <- interior_terra %>% 
   select(chla_mean) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  chla_mean_coords <-  t_chla_mean  %>% 
+  chla_mean_coords <- chla_mean  %>% 
   select(x, y)
   
   ##
   
-  t_chla_uncertainty <- interior_terra %>% 
+  chla_uncertainty <- interior_terra %>% 
   select(chla_uncertainty) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  chla_uncertainty_coords <-  t_chla_uncertainty  %>% 
+  chla_uncertainty_coords <- chla_uncertainty  %>% 
   select(x, y)
   
   ##
   
-  t_lake_surface_water_temperature <- interior_terra %>% 
+  lake_surface_water_temperature <- interior_terra %>% 
   select(lake_surface_water_temperature) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble() %>% 
-    rename(lwst = lake_surface_water_temperature)
+   as_tibble()
   
-  lake_surface_water_temperature_coords <-  t_lake_surface_water_temperature %>% 
+  lake_surface_water_temperature_coords <- lake_surface_water_temperature %>% 
   select(x, y)
   
   ##
   
-  t_lswt_uncertainty <- interior_terra %>% 
+  lswt_uncertainty <- interior_terra %>% 
    select(lswt_uncertainty) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  lswt_uncertainty_coords <-  t_lswt_uncertainty %>% 
+  lswt_uncertainty_coords <- lswt_uncertainty %>% 
    select(x, y)
   
   ##
  
-  t_lswt_quality_level <- interior_terra %>% 
+  lswt_quality_level <- interior_terra %>% 
    select(lswt_quality_level) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  lswt_quality_coords <-  t_lswt_quality_level %>% 
+  lswt_quality_coords <- lswt_quality_level %>% 
     select(x, y) 
   
   ##
   
-  t_turbidity_mean <- interior_terra %>% 
+  turbidity_mean <- interior_terra %>% 
    select(turbidity_mean) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  tm_coords <-  t_turbidity_mean %>% 
+  tm_coords <- turbidity_mean %>% 
    select(x, y)
   
   ##
   
-  t_turbidity_uncertainty <- interior_terra %>% 
+  turbidity_uncertainty <- interior_terra %>% 
    select(turbidity_uncertainty) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble()
   
-  tu_coords <-  t_turbidity_uncertainty %>% 
+  tu_coords <- turbidity_uncertainty %>% 
    select(x, y)
   
   ##
   
-  t_rw_443 <- interior_terra %>% 
+  rw_443 <- interior_terra %>% 
    select(Rw443) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble()%>% 
-  rename(rw_443 = Rw443)
+   as_tibble()
   
-  rw_443_coords <-  t_rw_443 %>% 
+  rw_443_coords <- turbidity_uncertainty %>% 
    select(x, y)
   
   ###
   
-  t_rw_443_u <- interior_terra %>% 
+  rw_443_u <- interior_terra %>% 
    select(Rw443_uncertainty_relative) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble() %>% 
-  rename(rw_443_u = Rw443_uncertainty_relative)
+   as_tibble()
   
-  rw_443_u_coords <- t_rw_443_u %>% 
+  rw_443_u_coords <- turbidity_uncertainty %>% 
    select(x, y)
   
   ###
   
-   t_rw_547 <- interior_terra %>% 
+  rw_547
+  
+   rw_547 <- interior_terra %>% 
    select(Rw547) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble() %>% 
-  rename(rw_547 = Rw547)
+   as_tibble()
   
-   rw_547_coords <- t_rw_547  %>% 
+   rw_547_coords <- turbidity_uncertainty %>% 
    select(x, y)
   
   ###
     
    
-   t_rw_547_u <- interior_terra %>% 
+   rw_547_u <- interior_terra %>% 
    select(Rw547_uncertainty_relative) %>% 
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble() %>% 
-  rename(rw_547_u = Rw547_uncertainty_relative)
+   as_tibble()
   
-   rw_547_u_coords <- t_rw_547_u %>% 
+   rw_547_u_coords <- turbidity_uncertainty %>% 
    select(x, y)
   
-
-   ### 
+   
+  
+   ###
   
    
-  comb_table <- bind_rows(t_chla_mean, t_chla_uncertainty, 
-                        t_lake_surface_water_temperature, t_lswt_uncertainty, 
-                        t_lswt_quality_level, t_turbidity_mean, t_turbidity_uncertainty,
-                        t_rw_443, t_rw_443_u, t_rw_547, t_rw_547_u)
+  comb_table <- bind_rows(chla_mean, chla_uncertainty, 
+                        lake_surface_water_temperature, lswt_uncertainty, 
+                        lswt_quality_level, turbidity_mean, turbidity_uncertainty,
+                        rw_443, rw_443_u, rw_547, rw_547_u)
   
   coord_template <- bind_rows(chla_mean_coords, chla_uncertainty_coords, 
                               lake_surface_water_temperature_coords, 
@@ -367,34 +365,28 @@ for (i in 1:length(cci_files)) {
   
   ##
   
-  coord_filling <- left_join(coord_template, t_chla_mean)
+  coord_filling <- left_join(coord_template, chla_mean)
   
-  coord_filling <- left_join(coord_filling, t_chla_uncertainty)
+  coord_filling <- left_join(coord_filling, chla_uncertainty)
   
-  coord_filling <- left_join(coord_filling, t_lake_surface_water_temperature)
+  coord_filling <- left_join(coord_filling, lake_surface_water_temperature)
   
-  coord_filling <- left_join(coord_filling, t_lswt_uncertainty)
+  coord_filling <- left_join(coord_filling, lswt_uncertainty)
   
-  coord_filling <- left_join(coord_filling, t_lswt_quality_level)
+  coord_filling <- left_join(coord_filling, lswt_quality_level)
   
-  coord_filling <- left_join(coord_filling, t_turbidity_mean)
+  coord_filling <- left_join(coord_filling, turbidity_mean)
   
-  coord_filling <- left_join(coord_filling, t_turbidity_uncertainty)
-  
-  coord_filling <- left_join(coord_filling, t_rw_443)
-  
-  coord_filling <- left_join(coord_filling, t_rw_443_u)
-  
-  coord_filling <- left_join(coord_filling, t_rw_547)
-  
-  coord_filling <- left_join(coord_filling, t_rw_547_u)
+  coord_filling <- left_join(coord_filling, turbidity_uncertainty)
   
   ##
   
   interior_data_filled <- coord_filling %>%
     mutate(date = composite_date) %>% 
     replace(is.na(.), 0) %>% 
-    mutate(na_test = chla_mean + chla_uncertainty  + lswt_uncertainty + lswt_quality_level  + lwst + turbidity_mean + turbidity_uncertainty + rw_443 + rw_443_u + rw_547 + rw_547_u) %>% 
+    mutate(na_test = chla_mean + chla_uncertainty 
+           + lswt_uncertainty + lswt_quality_level 
+           + turbidity_mean + turbidity_uncertainty) %>% 
     filter(na_test != 0)
   
   # Prep for export 
