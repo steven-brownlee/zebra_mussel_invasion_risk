@@ -110,9 +110,11 @@ cci_lakes_joined <- st_join(cci_lakes_outline_sf, wwf_glwd_1)
 
 cci_lakes_name_corrected <- cci_lakes_joined %>%
   mutate(name = coalesce(name, LAKE_NAME)) %>% 
-  select(name, id)
+  select(name, id) %>% 
+  st_transform(crs = 4087) %>% 
+  st_buffer(dist = 400)
 
-#write_sf(cci_lakes_name_corrected, 'auxiliary_files/cci_lakes_corrected.gpkg')
+write_sf(cci_lakes_name_corrected, 'auxiliary_files/cci_lakes_corrected.gpkg')
 
 ```
 
@@ -252,7 +254,7 @@ for (i in 1218:length(cci_files)) {
   crop(bc_bbox) %>% 
   st_as_stars() %>% 
    as_tibble() %>% 
-    rename(lwst = lake_surface_water_temperature)
+    rename(lswt = lake_surface_water_temperature)
   
   lake_surface_water_temperature_coords <-  t_lake_surface_water_temperature %>% 
   select(x, y)
@@ -412,13 +414,100 @@ for (i in 1218:length(cci_files)) {
 
 ```
 
-## Attach lake information
+# 3.) Read .rds files, process into stars objects
 
 ```{r}
 
-cci_lakes_name_corrected <- read_sf('auxiliary_files/cci_lakes_corrected.gpkg') %>% 
-  st_transform(crs = 4087) %>% 
-  st_buffer(dist = 100)
+## Read data in to R, collate into one table
+
+cci_data <- list.files('cci_lakes_rds/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+cci_data_collated <- lapply(cci_data, readRDS) %>% 
+  bind_rows()
+
+## Filter out unique coordinates, genereate UIDs for each
+
+cci_unique_coordinates <- cci_data_collated %>% 
+  select(x, y) %>% 
+  distinct() %>% 
+  st_as_sf(coords = c('x', 'y'),
+           crs = 4326) %>% 
+    mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>% 
+  rowid_to_column('point_id') %>% 
+  st_drop_geometry()
+
+## Set up date sequence to pair with coordinates - need 'sequence points' to
+#~ avoid annoying inability to make date columns in empty tibble
+
+date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'day') %>% 
+  as_tibble() %>% 
+  rename(date = value) %>% 
+  rowid_to_column('date_id')
+
+date_sequence_points <- seq(1, nrow(date_sequence), by = 1) %>% 
+  as_tibble() %>% 
+  rename(date_id = value)
+
+## Append time sequences to each coordinate
+
+coord_time_template <- tibble(point_id = numeric(),
+                              x = numeric(),
+                              y = numeric(),
+                              date_id = numeric())
+
+for (i in 1:max(cci_unique_coordinates$point_id)) {
+  ival = eval(i)
+  date_interior <- date_sequence_points %>% mutate(point_id = ival)
+  coord_interior <- cci_unique_coordinates %>% filter(point_id == ival)
+  interior_join <- left_join(coord_interior, date_interior, by = 'point_id')
+  coord_time_template <- bind_rows(coord_time_template, interior_join)
+  print(paste('Completed:', ival, 'of', max(cci_unique_coordinates$point_id)))
+}
+
+write_rds(coord_time_template, 'auxiliary_files/coord_time_template.rds')
+
+coord_time_template <- readRDS('auxiliary_files/coord_time_template.rds')
+
+coord_time_scaffold <- coord_time_template
+
+coord_time_scaffold <- left_join(coord_time_scaffold, date_sequence,
+                                 by = 'date_id')
+
+## Join CCI lakes data to the scaffold
+
+cci_data_collated$date <- dmy(cci_data_collated$date)
+
+coord_time_joined <- left_join(coord_time_scaffold, cci_data_collated,
+                               by = c('x', 'y', 'date')) %>% 
+  select(-na_test)
+
+## Export individual slices
+
+coord_time_joined$group_id <- cut_number(coord_time_joined$point_id, 100)
+
+coord_time_joined$group_id <- as.numeric(coord_time_joined$group_id)
+
+for (i in 1:100) {
+  ival = eval(i)
+  interior_subset <- coord_time_joined %>% 
+  filter(group_id == ival)
+  filename <- paste0('cci_lakes_slices/cci_slice_', ival, '.rds')
+  write_rds(interior_subset, filename)
+  print(paste('Completed:', ival, 'of', 100))
+  
+}
+
+
+```
+
+
+## Attach lake information
+
+```{r}
 
 cci_slices <- list.files('cci_lakes_slices/', 
                             pattern = '*.rds',
@@ -495,17 +584,20 @@ nn_filler <- function(sequence, rds_interior) {
                          date = date(),
                          chla_mean = numeric(),
                          chla_uncertainty = numeric(),
-                         lake_surface_water_temperature = numeric(),
+                         lwst = numeric(),
                          lswt_uncertainty = numeric(),
                          lswt_quality_level = numeric(),
                          turbidity_mean = numeric(),
                          turbidity_uncertainty = numeric(),
+                         rw_443 = numeric(),
+                         rw_443_u = numeric(),
+                         rw_547 = numeric(),
+                         rw_547_u = numeric(),
                          group_id = numeric(),
                          name = character(),
                          id = numeric())
   
   outer_template$date <- as.Date(outer_template$date)
-  
   
   for (i in sequence) {
     ival = eval(i)
@@ -539,25 +631,35 @@ nn_filler <- function(sequence, rds_interior) {
       rds_nn_summ <- rds_nn %>% 
         group_by(grouping_id) %>% 
         summarize(chla_mean = mean(chla_mean),
-                lake_surface_water_temperature = mean(lake_surface_water_temperature),
-                turbidity_mean = mean(turbidity_mean)) %>% 
+                lswt_mean = mean(lwst),
+                turbidity_mean = mean(turbidity_mean),
+                rw_443_mean = mean(rw_443),
+                rw_547_mean = mean(rw_547)) %>% 
         st_drop_geometry()
       
       eval_criteria <- rds_point_data %>% 
-        select(chla_mean, lake_surface_water_temperature,
-                                          turbidity_mean) 
+        select(chla_mean, lwst, turbidity_mean,
+               rw_443, rw_547) 
       
       if (is.na(eval_criteria$chla_mean) == TRUE) {
         rds_point_data$chla_mean <- rds_nn_summ$chla_mean
         }
       
-      if (is.na(eval_criteria$lake_surface_water_temperature) == TRUE) {
-        rds_point_data$lake_surface_water_temperature <- 
-          rds_nn_summ$lake_surface_water_temperature
+      if (is.na(eval_criteria$lwst) == TRUE) {
+        rds_point_data$lwst <- 
+          rds_nn_summ$lswt_mean
         }
       if (is.na(eval_criteria$turbidity_mean) == TRUE) {
           rds_point_data$turbidity_mean <- rds_nn_summ$turbidity_mean
-        }
+      }
+      
+        if (is.na(eval_criteria$rw_443) == TRUE) {
+          rds_point_data$rw_443 <- rds_nn_summ$rw_443_mean
+      }
+      
+         if (is.na(eval_criteria$rw_547) == TRUE) {
+          rds_point_data$rw_547 <- rds_nn_summ$rw_547_mean
+      }
       
       outer_template <- bind_rows(outer_template, rds_point_data)
 
@@ -572,12 +674,12 @@ cci_l_l <- list.files('cci_lakes_by_lake/',
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
-###
+### 
 
 plan(callr, workers = 15)
 options(future.globals.maxSize = 1.6e+10)
 
-for (i in 1:length(cci_l_l)) {
+for (i in 1:2) {
   ival = eval(i)
   lake_rds <- read_rds(cci_l_l[ival])
   #lake_rds <- lake_rds %>% distinct(point_id, date, .keep_all = TRUE)
@@ -799,7 +901,9 @@ cci_calcium_joined <- read_rds('auxiliary_files/cci_calcium_joined.rds') %>%
 
 ```
 
+# 6.) Suitability modeling
 
+# 7.) Suitability composition modeling
 
 # ~~ Supplemental
 
