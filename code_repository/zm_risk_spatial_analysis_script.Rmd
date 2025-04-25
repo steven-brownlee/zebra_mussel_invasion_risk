@@ -615,16 +615,12 @@ for (i in 1:length(cci_l_l)) {
 
 ```
 
-
+## K-nearest neighbour
 
 
 ```{r}
 
 # First pass, using k-nearest neighbour filling
-
-rds_interior <- lake_rds
-
-date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'week') 
 
 nn_filler <- function(sequence, rds_interior) {
   
@@ -741,7 +737,8 @@ options(future.globals.maxSize = 1.6e+10)
 
 for (i in 1:10) {
   ival = eval(i)
-  lake_rds <- read_rds(cci_l_l[ival])
+  lake_rds <- read_rds(cci_l_l[ival]) %>% 
+    rename(date = week)
   filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
   
   lake_filled_knn <- future_map(1:1827,
@@ -760,7 +757,8 @@ options(future.globals.maxSize = 1.6e+10)
 
 for (i in 10:20) {
   ival = eval(i)
-  lake_rds <- read_rds(cci_l_l[ival])
+  lake_rds <- read_rds(cci_l_l[ival]) %>% 
+    rename(date = week)
   filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
   lake_filled_knn <- future_map(1:1827,
                           ~nn_filler(.x, rds_interior = lake_rds)) %>% 
@@ -778,8 +776,8 @@ options(future.globals.maxSize = 1.6e+10)
 
 for (i in 20:30) {
   ival = eval(i)
-  lake_rds <- read_rds(cci_l_l[ival])
-  #lake_rds <- lake_rds %>% distinct(point_id, date, .keep_all = TRUE)
+  lake_rds <- read_rds(cci_l_l[ival]) %>% 
+    rename(date = week)
   filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
   
   lake_filled_knn <- future_map(1:1827,
@@ -798,46 +796,12 @@ options(future.globals.maxSize = 1.6e+10)
 
 for (i in 30:40) {
   ival = eval(i)
-  lake_rds <- read_rds(cci_l_l[ival])
-  lake_rds <- lake_rds %>% distinct(point_id, date, .keep_all = TRUE)
-  filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
-  
-  lake_filled_knn <- future_map(1:1827,
-                          ~nn_filler(.x, rds_interior = lake_rds)) %>% 
-    bind_rows()
-  
-  write_rds(lake_filled_knn, filename)
-  print(paste('Completed:', cci_l_l[ival]))
-  
-}
-
-for (i in 20:30) {
-  ival = eval(i)
-  lake_rds <- read_rds(cci_l_l[ival])
-  lake_rds <- lake_rds %>% distinct(point_id, date, .keep_all = TRUE)
-  filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
-  
-  lake_filled_knn <- future_map(1:1827,
-                          ~nn_filler(.x, rds_interior = lake_rds)) %>% 
-    bind_rows()
-  
-  write_rds(lake_filled_knn, filename)
-  print(paste('Completed:', cci_l_l[ival]))
-  
-}
-
-###
-
-plan(callr, workers = 15)
-options(future.globals.maxSize = 1.6e+10)
-
-for (i in 1:length(cci_l_l)) {
-  ival = eval(i)
   lake_rds <- read_rds(cci_l_l[ival]) %>% 
     rename(date = week)
+  lake_rds <- lake_rds %>% distinct(point_id, date, .keep_all = TRUE)
   filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
   
-  lake_filled_knn <- future_map(1:261,
+  lake_filled_knn <- future_map(1:1827,
                           ~nn_filler(.x, rds_interior = lake_rds)) %>% 
     bind_rows()
   
@@ -845,8 +809,6 @@ for (i in 1:length(cci_l_l)) {
   print(paste('Completed:', cci_l_l[ival]))
   
 }
-
-
 
 # Second pass, using imputeTS
 
