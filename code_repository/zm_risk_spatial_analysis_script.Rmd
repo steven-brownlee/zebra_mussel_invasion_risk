@@ -102,7 +102,7 @@ cci_lakes_outline <- vect('auxiliary_files/cci_lakes_shapefile.gpkg')
 cci_lakes_outline_sf <- read_sf('auxiliary_files/cci_lakes_shapefile.gpkg') %>% 
   st_make_valid()
 
-cci_lake_names_corrected <- read_sf('auxiliary_files/cci_lakes_corrected.gpkg')
+cci_lakes_name_corrected <- read_sf('auxiliary_files/cci_lakes_corrected.gpkg')
 
 ```
 
@@ -577,23 +577,64 @@ for (i in 1:40) {
 
 # 4.) Fill time series gaps
 
+## Aggregate to one-week intervals
+
+```{r}
+
+cci_l_l <- list.files('cci_lakes_by_lake/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+for (i in 1:length(cci_l_l)) {
+  ival = eval(i)
+  lake_rds <- read_rds(cci_l_l[ival])
+  lake_rds$week <- floor_date(lake_rds$date, "week")
+  
+  lake_rds_grouped <- lake_rds %>% 
+    group_by(x, y, point_id, week) %>%
+    summarize(chla_mean = mean(chla_mean),
+              lswt = mean(lswt),
+              lswt_uncertainty = mean(lswt_uncertainty),
+              lswt_quality_level = max(lswt_quality_level),
+              turbidity_mean = mean(turbidity_mean),
+              turbidity_uncertainty = max(turbidity_uncertainty),
+              rw_443 = mean(rw_443),
+              rw_443_u = mean(rw_443_u),
+              rw_560 = mean(rw_560),
+              rw_560_u = mean(rw_560_u))
+  
+  filename <- paste0('cci_lakes_by_lake_weekly/cci_', name_list[ival], '.rds')
+  
+  write_rds(lake_rds_grouped, filename)
+  
+  print(paste('Completed:', ival, 'of', length(cci_l_l)))
+  
+}
+
+
+```
+
+
+
+
 ```{r}
 
 # First pass, using k-nearest neighbour filling
 
-date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'day') 
+rds_interior <- lake_rds
+
+date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'week') 
 
 nn_filler <- function(sequence, rds_interior) {
-  
   
   outer_template <- tibble(x = numeric(),
                          y = numeric(),
                          point_id = numeric(),
-                         date_id = numeric(),
                          date = date(),
                          chla_mean = numeric(),
                          chla_uncertainty = numeric(),
-                         lwst = numeric(),
+                         lswt = numeric(),
                          lswt_uncertainty = numeric(),
                          lswt_quality_level = numeric(),
                          turbidity_mean = numeric(),
@@ -610,6 +651,14 @@ nn_filler <- function(sequence, rds_interior) {
   
   for (i in sequence) {
     ival = eval(i)
+    
+    date_sequence <- rds_interior %>% 
+      ungroup() %>% 
+      select(date) %>% 
+      distinct(date) %>% 
+      arrange(date) %>% 
+      deframe()
+    
     date_selection <- date_sequence[ival]
     rds_filtered <- rds_interior %>% 
       filter(date == date_selection)
@@ -640,22 +689,22 @@ nn_filler <- function(sequence, rds_interior) {
       rds_nn_summ <- rds_nn %>% 
         group_by(grouping_id) %>% 
         summarize(chla_mean = mean(chla_mean),
-                lswt_mean = mean(lwst),
+                lswt_mean = mean(lswt),
                 turbidity_mean = mean(turbidity_mean),
                 rw_443_mean = mean(rw_443),
                 rw_560_mean = mean(rw_560)) %>% 
         st_drop_geometry()
       
       eval_criteria <- rds_point_data %>% 
-        select(chla_mean, lwst, turbidity_mean,
+        select(x, y, point_id, chla_mean, lswt, turbidity_mean,
                rw_443, rw_560) 
       
       if (is.na(eval_criteria$chla_mean) == TRUE) {
         rds_point_data$chla_mean <- rds_nn_summ$chla_mean
         }
       
-      if (is.na(eval_criteria$lwst) == TRUE) {
-        rds_point_data$lwst <- 
+      if (is.na(eval_criteria$lswt) == TRUE) {
+        rds_point_data$lswt <- 
           rds_nn_summ$lswt_mean
         }
       if (is.na(eval_criteria$turbidity_mean) == TRUE) {
@@ -679,7 +728,7 @@ nn_filler <- function(sequence, rds_interior) {
 
 ###
 
-cci_l_l <- list.files('cci_lakes_by_lake/', 
+cci_l_l <- list.files('cci_lakes_by_lake_weekly/', 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
@@ -693,7 +742,6 @@ options(future.globals.maxSize = 1.6e+10)
 for (i in 1:10) {
   ival = eval(i)
   lake_rds <- read_rds(cci_l_l[ival])
-  #lake_rds <- lake_rds %>% distinct(point_id, date, .keep_all = TRUE)
   filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
   
   lake_filled_knn <- future_map(1:1827,
@@ -713,9 +761,7 @@ options(future.globals.maxSize = 1.6e+10)
 for (i in 10:20) {
   ival = eval(i)
   lake_rds <- read_rds(cci_l_l[ival])
-  #lake_rds <- lake_rds %>% distinct(point_id, date, .keep_all = TRUE)
   filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
-  
   lake_filled_knn <- future_map(1:1827,
                           ~nn_filler(.x, rds_interior = lake_rds)) %>% 
     bind_rows()
@@ -780,6 +826,25 @@ for (i in 20:30) {
   
 }
 
+###
+
+plan(callr, workers = 15)
+options(future.globals.maxSize = 1.6e+10)
+
+for (i in 1:length(cci_l_l)) {
+  ival = eval(i)
+  lake_rds <- read_rds(cci_l_l[ival]) %>% 
+    rename(date = week)
+  filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
+  
+  lake_filled_knn <- future_map(1:261,
+                          ~nn_filler(.x, rds_interior = lake_rds)) %>% 
+    bind_rows()
+  
+  write_rds(lake_filled_knn, filename)
+  print(paste('Completed:', cci_l_l[ival]))
+  
+}
 
 
 
