@@ -96,16 +96,9 @@ reticulate::py_install(packages = c('xarray', 'dask', 'netCDF4', 'bottleneck',
 bc_bbox <- vect('auxiliary_files/bc_bbox.gpkg')
 
 na_bbox <- vect('auxiliary_files/north_america_cci_bbox.gpkg') %>% 
-  project('EPSG:4087')
+  project('EPSG:4326')
 
-#na_bbox <- read_sf('auxiliary_files/north_america_bbox.gpkg')
-
-cci_lakes_outline <- vect('auxiliary_files/cci_lakes_shapefile.gpkg') 
-
-cci_lakes_outline_sf <- read_sf('auxiliary_files/cci_lakes_shapefile.gpkg') %>% 
-  st_make_valid()
-
-cci_lakes_name_corrected <- read_sf('auxiliary_files/cci_lakes_corrected.gpkg')
+cci_lakes_name_corrected <- read_sf('auxiliary_files/cci_lakes_corrected.gpkg') 
 
 ```
 
@@ -123,7 +116,8 @@ cci_lakes_name_corrected <- cci_lakes_joined %>%
   mutate(name = coalesce(name, LAKE_NAME)) %>% 
   select(name, id) %>% 
   st_transform(crs = 4087) %>% 
-  st_buffer(dist = 400)
+  st_buffer(dist = 400) %>% 
+  mutate(identity = 1)
 
 write_sf(cci_lakes_name_corrected, 'auxiliary_files/cci_lakes_corrected.gpkg')
 
@@ -219,9 +213,66 @@ cci_files <- list.files('cci_lakes_download',
                             full.names = TRUE,
                             recursive = TRUE)
 
-outdir <- '/mnt/023ede0b-f66f-4769-939d-421b38967538/cci_lakes_rds/'
+outdir <- 'cci_lakes_rds/'
 
-for (i in 1735:3470) {
+###
+
+# Assembly scaffold
+
+coord_data_table <- tibble(uid = numeric(),
+                           x = numeric(),
+                      y = numeric(),
+                      x_wgs = numeric(),
+                      y_wgs = numeric(),
+                      name = character(),
+                      id = numeric())
+
+
+input_file <- cci_files[1]
+
+coord_frame <- rast(input_file) %>% 
+    select(lake_surface_water_temperature) %>% 
+    crop(na_bbox) %>%
+    st_as_stars() %>% 
+    as_tibble() %>% 
+    select(x, y) %>% 
+   rowid_to_column('uid')
+
+coord_frame$clipping_group <- as.numeric(cut_number(coord_frame$uid, 2000))
+
+
+for (i in 1:2000) {
+  ival = eval(i)
+    
+  split <- coord_frame %>% 
+    filter(clipping_group == ival)
+  
+  split_sf <- split %>% 
+      st_as_sf(coords = c('x', 'y'),
+                 crs = 4326) %>% 
+            mutate(x_wgs = sf::st_coordinates(.)[,1],
+               y_wgs = sf::st_coordinates(.)[,2]) %>% 
+      st_transform(4087) %>% 
+      st_intersection(cci_lakes_name_corrected)
+  
+  if (nrow(split_sf) > 0) {
+      split_tibble <- split_sf %>% 
+        mutate(x = sf::st_coordinates(.)[,1],
+               y = sf::st_coordinates(.)[,2]) %>% 
+        st_drop_geometry()
+      
+        coord_data_table <- bind_rows(coord_data_table, split_tibble)
+        
+        print(paste('Completed:', ival, 'of', 2000))
+    } else {
+        print(paste('No data for', ival, 'of', 2000))
+      }
+      
+      }
+    
+
+
+for (i in 1:length(cci_files)) {
   ival <- eval(i)
   input_file <- cci_files[ival]
   input_filename <- basename(input_file)
@@ -239,193 +290,123 @@ for (i in 1735:3470) {
   
   t_chla_mean <- interior_terra %>% 
   select(chla_mean) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
-  st_as_stars() %>% 
-   as_tibble()
-  
-  chla_mean_coords <-  t_chla_mean  %>% 
-  select(x, y)
+  st_as_stars()
   
   ##
   
   t_chla_uncertainty <- interior_terra %>% 
   select(chla_uncertainty) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
-  st_as_stars() %>% 
-   as_tibble()
-  
-  chla_uncertainty_coords <-  t_chla_uncertainty  %>% 
-  select(x, y)
+  st_as_stars() 
   
   ##
   
   t_lake_surface_water_temperature <- interior_terra %>% 
   select(lake_surface_water_temperature) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble() %>% 
     rename(lswt = lake_surface_water_temperature)
-  
-  lake_surface_water_temperature_coords <-  t_lake_surface_water_temperature %>% 
-  select(x, y)
+
   
   ##
   
   t_lswt_uncertainty <- interior_terra %>% 
    select(lswt_uncertainty) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
-  st_as_stars() %>% 
-   as_tibble()
-  
-  lswt_uncertainty_coords <-  t_lswt_uncertainty %>% 
-   select(x, y)
+  st_as_stars()
   
   ##
  
   t_lswt_quality_level <- interior_terra %>% 
    select(lswt_quality_level) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
-  st_as_stars() %>% 
-   as_tibble()
-  
-  lswt_quality_coords <-  t_lswt_quality_level %>% 
-    select(x, y) 
+  st_as_stars() 
   
   ##
   
   t_turbidity_mean <- interior_terra %>% 
    select(turbidity_mean) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
-  st_as_stars() %>% 
-   as_tibble()
-  
-  tm_coords <-  t_turbidity_mean %>% 
-   select(x, y)
+  st_as_stars() 
   
   ##
   
   t_turbidity_uncertainty <- interior_terra %>% 
    select(turbidity_uncertainty) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
-  st_as_stars() %>% 
-   as_tibble()
-  
-  tu_coords <-  t_turbidity_uncertainty %>% 
-   select(x, y)
+  st_as_stars()
   
   ##
   
   t_rw_443 <- interior_terra %>% 
    select(Rw443) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble()%>% 
   rename(rw_443 = Rw443)
-  
-  rw_443_coords <-  t_rw_443 %>% 
-   select(x, y)
   
   ###
   
   t_rw_443_u <- interior_terra %>% 
    select(Rw443_uncertainty_relative) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble() %>% 
   rename(rw_443_u = Rw443_uncertainty_relative)
-  
-  rw_443_u_coords <- t_rw_443_u %>% 
-   select(x, y)
-  
+
   ###
   
    t_rw_560 <- interior_terra %>% 
    select(Rw560) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble() %>% 
   rename(rw_560 = Rw560)
-  
-   rw_560_coords <- t_rw_560  %>% 
-   select(x, y)
   
   ###
     
    
    t_rw_560_u <- interior_terra %>% 
    select(Rw560_uncertainty_relative) %>% 
-  project('EPSG:4087') %>% 
   crop(na_bbox) %>% 
   st_as_stars() %>% 
-   as_tibble() %>% 
   rename(rw_560_u = Rw560_uncertainty_relative)
-  
-   rw_560_u_coords <- t_rw_560_u %>% 
-   select(x, y)
-  
-
+   
    ### 
   
-   
-  comb_table <- bind_rows(t_chla_mean, t_chla_uncertainty, 
+  combined <- c(t_chla_mean, t_chla_uncertainty, 
                         t_lake_surface_water_temperature, t_lswt_uncertainty, 
                         t_lswt_quality_level, t_turbidity_mean, t_turbidity_uncertainty,
-                        t_rw_443, t_rw_443_u, t_rw_560, t_rw_560_u)
-  
-  coord_template <- bind_rows(chla_mean_coords, chla_uncertainty_coords, 
-                              lake_surface_water_temperature_coords, 
-                              lswt_uncertainty_coords, lswt_quality_coords, 
-                              tm_coords, tu_coords, rw_443_coords, rw_443_u_coords, 
-                              rw_560_coords, rw_560_u_coords) %>% 
-  distinct(x, y)
-  
-  ##
-  
-  coord_filling <- left_join(coord_template, t_chla_mean)
-  
-  coord_filling <- left_join(coord_filling, t_chla_uncertainty)
-  
-  coord_filling <- left_join(coord_filling, t_lake_surface_water_temperature)
-  
-  coord_filling <- left_join(coord_filling, t_lswt_uncertainty)
-  
-  coord_filling <- left_join(coord_filling, t_lswt_quality_level)
-  
-  coord_filling <- left_join(coord_filling, t_turbidity_mean)
-  
-  coord_filling <- left_join(coord_filling, t_turbidity_uncertainty)
-  
-  coord_filling <- left_join(coord_filling, t_rw_443)
-  
-  coord_filling <- left_join(coord_filling, t_rw_443_u)
-  
-  coord_filling <- left_join(coord_filling, t_rw_560)
-  
-  coord_filling <- left_join(coord_filling, t_rw_560_u)
-  
-  ##
-  
-  interior_data_filled <- coord_filling %>%
+                        t_rw_443, t_rw_443_u, t_rw_560, t_rw_560_u) %>% 
+    as_tibble() %>% 
     mutate(date = composite_date) %>% 
-    replace(is.na(.), 0) %>% 
-    mutate(na_test = chla_mean + chla_uncertainty  + lswt_uncertainty + lswt_quality_level  + lswt + turbidity_mean + turbidity_uncertainty + rw_443 + rw_443_u + rw_560 + rw_560_u) %>% 
-    filter(na_test != 0)
+    rowid_to_column('uid')
   
+  combined$clipping_group <- as.numeric(cut_number(combined$uid, 2000))
+  
+  interior_data_table <- tibble(x = numeric(),
+                         y = numeric(),
+                         date = character(),
+                         chla_mean = numeric(),
+                         chla_uncertainty = numeric(),
+                         lswt = numeric(),
+                         lswt_uncertainty = numeric(),
+                         lswt_quality_level = numeric(),
+                         turbidity_mean = numeric(),
+                         turbidity_uncertainty = numeric(),
+                         rw_443 = numeric(),
+                         rw_443_u = numeric(),
+                         rw_560 = numeric(),
+                         rw_560_u = numeric(),
+                         name = character(),
+                         id = numeric())
+  
+
+  }
+
   # Prep for export 
   
   output_filename <- paste0(outdir, 'cci_lakes_', composite_date, '_processed.rds')
   
-  write_rds(interior_data_filled, output_filename)
+  write_rds(interior_data_table, output_filename)
   
   print(paste('Completed:', ival, 'of', length(cci_files)))
   
@@ -438,153 +419,38 @@ for (i in 1735:3470) {
 # 3.) Read .rds files, process into stars objects
 
 ```{r}
-
-## Read data in to R, collate into one table
-
-cci_data <- list.files('cci_lakes_rds/', 
-                            pattern = '*.rds',
-                            full.names = TRUE,
-                            recursive = TRUE)
-
-cci_data_collated <- lapply(cci_data, readRDS) %>% 
-  bind_rows()
-
-## Filter out unique coordinates, genereate UIDs for each
-
-cci_unique_coordinates <- cci_data_collated %>% 
-  select(x, y) %>% 
-  distinct() %>% 
-  st_as_sf(coords = c('x', 'y'),
-           crs = 4326) %>% 
-    mutate(x = sf::st_coordinates(.)[,1],
-                y = sf::st_coordinates(.)[,2]) %>% 
-  rowid_to_column('point_id') %>% 
-  st_drop_geometry()
-
-## Set up date sequence to pair with coordinates - need 'sequence points' to
-#~ avoid annoying inability to make date columns in empty tibble
-
-date_sequence <- seq(dmy('01-01-2016'), dmy('31-12-2020'), by = 'day') %>% 
-  as_tibble() %>% 
-  rename(date = value) %>% 
-  rowid_to_column('date_id')
-
-date_sequence_points <- seq(1, nrow(date_sequence), by = 1) %>% 
-  as_tibble() %>% 
-  rename(date_id = value)
-
-## Append time sequences to each coordinate
-
-coord_time_template <- tibble(point_id = numeric(),
-                              x = numeric(),
-                              y = numeric(),
-                              date_id = numeric())
-
-for (i in 1:max(cci_unique_coordinates$point_id)) {
-  ival = eval(i)
-  date_interior <- date_sequence_points %>% mutate(point_id = ival)
-  coord_interior <- cci_unique_coordinates %>% filter(point_id == ival)
-  interior_join <- left_join(coord_interior, date_interior, by = 'point_id')
-  coord_time_template <- bind_rows(coord_time_template, interior_join)
-  print(paste('Completed:', ival, 'of', max(cci_unique_coordinates$point_id)))
-}
-
-write_rds(coord_time_template, 'auxiliary_files/coord_time_template.rds')
-
-coord_time_template <- readRDS('auxiliary_files/coord_time_template.rds')
-
-coord_time_scaffold <- coord_time_template
-
-coord_time_scaffold <- left_join(coord_time_scaffold, date_sequence,
-                                 by = 'date_id')
-
-## Join CCI lakes data to the scaffold
-
-cci_data_collated$date <- dmy(cci_data_collated$date)
-
-coord_time_joined <- left_join(coord_time_scaffold, cci_data_collated,
-                               by = c('x', 'y', 'date')) %>% 
-  select(-na_test)
-
-## Export individual slices
-
-coord_time_joined$group_id <- cut_number(coord_time_joined$point_id, 100)
-
-coord_time_joined$group_id <- as.numeric(coord_time_joined$group_id)
-
-for (i in 1:100) {
-  ival = eval(i)
-  interior_subset <- coord_time_joined %>% 
-  filter(group_id == ival)
-  filename <- paste0('cci_lakes_slices/cci_slice_', ival, '.rds')
-  write_rds(interior_subset, filename)
-  print(paste('Completed:', ival, 'of', 100))
+lake_clipper <- function(clipping_group_number, cci_lakes,
+                         combined) {
   
-}
+      gn_eval = eval(clipping_group_number)
+      split <- combined %>% 
+        filter(clipping_group == gn_eval)
+      split_sf <- split %>% 
+        st_as_sf(coords = c('x', 'y'),
+                 crs = 4326) %>% 
+        st_transform(4087) %>% 
+        st_intersection(cci_lakes)
+      
+      if (nrow(split_sf) > 0) {
+        split_tibble <- split_sf %>% 
+          mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>% 
+          st_drop_geometry()
+      
+        return(split_tibble)
+      }
+      
+      }
+
+###
+
+plan(callr, workers = 6)
+options(future.globals.maxSize = 1.6e+10)
 
 
 ```
 
 
-## Attach lake information
-
-```{r}
-
-cci_slices <- list.files('cci_lakes_slices/', 
-                            pattern = '*.rds',
-                            full.names = TRUE,
-                            recursive = TRUE)
-
-for (i in 1:100) {
-  ###
-  
-  ival <- eval(i)
-  
-  int_slice <- readRDS(cci_slices[ival]) %>% 
-    st_as_sf(coords = c('x', 'y'),
-             crs = 4326) %>% 
-    st_transform(4087)
-  
-  int_slice <- st_join(int_slice, cci_lakes_name_corrected) %>% 
-        mutate(x = sf::st_coordinates(.)[,1],
-                y = sf::st_coordinates(.)[,2]) %>% 
-    st_drop_geometry()
-    
-  filename <- paste0('cci_lakes_slices_labelled/cci_slice_labelled_', ival, '.rds')
-  
-  write_rds(int_slice, filename)
-  
-  print(paste('Completed:', ival, 'of', 100))
-}
-
-cci_lakes_labelled <- list.files('cci_lakes_slices_labelled/', 
-                            pattern = '*.rds',
-                            full.names = TRUE,
-                            recursive = TRUE) %>% 
-  lapply(readRDS) %>% 
-  bind_rows() %>% 
-  mutate(name = ifelse(is.na(name), 'no_data', name)) %>% 
-  mutate(name = str_to_lower(name))
-
-name_list <- total_lake_length <- unique(cci_lakes_labelled$name)
-
-for (i in 1:40) {
-  
-  ival <- eval(i)
-  
-  label_filter <- cci_lakes_labelled %>% 
-    filter(name == name_list[ival])
-  
-  filename <- paste0('cci_lakes_by_lake/cci_', name_list[ival], '.rds')
-  
-  write_rds(label_filter, filename)
-  
-  print(paste('Completed:', ival, 'of', 40))
-}
-
-
-
-```
 
 
 # 4.) Fill time series gaps
