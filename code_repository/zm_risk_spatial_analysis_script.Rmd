@@ -205,6 +205,8 @@ for (i in 1:5) {
 
 # 2.) Process .nc files and export as RDS
 
+## 2a.) Create assembly frame
+
 ```{r}
 
 
@@ -212,8 +214,6 @@ cci_files <- list.files('cci_lakes_download',
                             pattern = '*.nc',
                             full.names = TRUE,
                             recursive = TRUE)
-
-outdir <- 'cci_lakes_rds/'
 
 ###
 
@@ -241,7 +241,7 @@ coord_frame <- rast(input_file) %>%
 coord_frame$clipping_group <- as.numeric(cut_number(coord_frame$uid, 2000))
 
 
-for (i in 1:2000) {
+for (i in 1500:2000) {
   ival = eval(i)
     
   split <- coord_frame %>% 
@@ -269,7 +269,48 @@ for (i in 1:2000) {
       }
       
       }
-    
+
+###
+
+assembly_frame_list <- list.files('cci_assembly_frame/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+assembly_frame_sf <- lapply(assembly_frame_list, readRDS) %>% 
+  bind_rows() %>% 
+  st_as_sf(coords = c('x', 'y'),
+           crs = 4087) %>% 
+  select(-uid, -clipping_group)
+  
+assembly_frame_rds <- lapply(assembly_frame_list, readRDS) %>% 
+  bind_rows() %>% 
+    select(-uid, -clipping_group)
+
+write_rds(assembly_frame_rds, 'cci_assembly_frame/cci_assembly_frame_complete.rds')
+
+write_sf(assembly_frame_sf, 'cci_assembly_frame/cci_assembly_frame_sf.gpkg')
+
+```
+
+## 2b.) Attach files to assembly frame, export
+
+```{r}
+
+assembly_frame_sf <- read_sf('cci_assembly_frame/cci_assembly_frame_sf.gpkg')
+
+assembly_frame_rds <- readRDS('cci_assembly_frame/cci_assembly_frame_complete.rds')
+
+
+###
+
+
+cci_files <- list.files('cci_lakes_download', 
+                            pattern = '*.nc',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+outdir <- 'cci_lakes_rds/'
 
 
 for (i in 1:length(cci_files)) {
@@ -277,7 +318,7 @@ for (i in 1:length(cci_files)) {
   input_file <- cci_files[ival]
   input_filename <- basename(input_file)
   
-  ## Extract dates from filename
+  ## Extract dates from filenam
   
   year_extract <- substr(input_filename, 37, 40)
   month_extract <- substr(input_filename, 41, 42)
@@ -377,30 +418,11 @@ for (i in 1:length(cci_files)) {
                         t_lswt_quality_level, t_turbidity_mean, t_turbidity_uncertainty,
                         t_rw_443, t_rw_443_u, t_rw_560, t_rw_560_u) %>% 
     as_tibble() %>% 
-    mutate(date = composite_date) %>% 
-    rowid_to_column('uid')
+    mutate(date = composite_date)
   
-  combined$clipping_group <- as.numeric(cut_number(combined$uid, 2000))
-  
-  interior_data_table <- tibble(x = numeric(),
-                         y = numeric(),
-                         date = character(),
-                         chla_mean = numeric(),
-                         chla_uncertainty = numeric(),
-                         lswt = numeric(),
-                         lswt_uncertainty = numeric(),
-                         lswt_quality_level = numeric(),
-                         turbidity_mean = numeric(),
-                         turbidity_uncertainty = numeric(),
-                         rw_443 = numeric(),
-                         rw_443_u = numeric(),
-                         rw_560 = numeric(),
-                         rw_560_u = numeric(),
-                         name = character(),
-                         id = numeric())
-  
-
-  }
+  combined_filtered <- left_join(assembly_frame_rds, combined, 
+                               by = c('x_wgs' = 'x', 
+                                      'y_wgs' = 'y'))
 
   # Prep for export 
   
@@ -416,42 +438,8 @@ for (i in 1:length(cci_files)) {
 
 ```
 
+
 # 3.) Read .rds files, process into stars objects
-
-```{r}
-lake_clipper <- function(clipping_group_number, cci_lakes,
-                         combined) {
-  
-      gn_eval = eval(clipping_group_number)
-      split <- combined %>% 
-        filter(clipping_group == gn_eval)
-      split_sf <- split %>% 
-        st_as_sf(coords = c('x', 'y'),
-                 crs = 4326) %>% 
-        st_transform(4087) %>% 
-        st_intersection(cci_lakes)
-      
-      if (nrow(split_sf) > 0) {
-        split_tibble <- split_sf %>% 
-          mutate(x = sf::st_coordinates(.)[,1],
-                y = sf::st_coordinates(.)[,2]) %>% 
-          st_drop_geometry()
-      
-        return(split_tibble)
-      }
-      
-      }
-
-###
-
-plan(callr, workers = 6)
-options(future.globals.maxSize = 1.6e+10)
-
-
-```
-
-
-
 
 # 4.) Fill time series gaps
 
