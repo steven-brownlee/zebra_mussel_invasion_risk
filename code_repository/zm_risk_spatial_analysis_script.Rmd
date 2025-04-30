@@ -318,13 +318,21 @@ for (i in 1:length(cci_files)) {
   input_file <- cci_files[ival]
   input_filename <- basename(input_file)
   
-  ## Extract dates from filenam
+  ## Extract dates from filename, check if already exists
   
   year_extract <- substr(input_filename, 37, 40)
   month_extract <- substr(input_filename, 41, 42)
   date_extract <- substr(input_filename, 43, 44)
   composite_date <- paste0(date_extract, '-', month_extract, '-', year_extract)
  
+  output_filename <- paste0(outdir, 'cci_lakes_', composite_date, '_processed.rds')
+  
+  if(file.exists(output_filename) == TRUE) {
+    
+    print('File already generated for', ival, 'of', 1:length(cci_files), 'skipping!')
+    
+  } else {
+    
   ## Extract data from file
   
   interior_terra <- rast(input_file)
@@ -426,11 +434,11 @@ for (i in 1:length(cci_files)) {
 
   # Prep for export 
   
-  output_filename <- paste0(outdir, 'cci_lakes_', composite_date, '_processed.rds')
-  
   write_rds(interior_data_table, output_filename)
   
   print(paste('Completed:', ival, 'of', length(cci_files)))
+  }
+  
   
   gc()
 }
