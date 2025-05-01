@@ -313,7 +313,7 @@ cci_files <- list.files('cci_lakes_download',
 outdir <- 'cci_lakes_rds/'
 
 
-for (i in 1:length(cci_files)) {
+for (i in 5205:6940) {
   ival <- eval(i)
   input_file <- cci_files[ival]
   input_filename <- basename(input_file)
@@ -329,7 +329,7 @@ for (i in 1:length(cci_files)) {
   
   if(file.exists(output_filename) == TRUE) {
     
-    print('File already generated for', ival, 'of', 1:length(cci_files), 'skipping!')
+    print(paste('File already generated for', ival, 'of', length(cci_files), 'skipping!'))
     
   } else {
     
@@ -434,9 +434,16 @@ for (i in 1:length(cci_files)) {
 
   # Prep for export 
   
-  write_rds(interior_data_table, output_filename)
+  write_rds(combined_filtered, output_filename)
   
   print(paste('Completed:', ival, 'of', length(cci_files)))
+  
+    rm(interior_terra, combined, combined_filtered, t_chla_mean, t_chla_uncertainty, 
+                        t_lake_surface_water_temperature, t_lswt_uncertainty, 
+                        t_lswt_quality_level, t_turbidity_mean, t_turbidity_uncertainty,
+                        t_rw_443, t_rw_443_u, t_rw_560, t_rw_560_u )
+    
+    gc()
   }
   
   
@@ -1127,4 +1134,62 @@ prefix_list <- c('CHA', 'CLE', 'DEV', 'FLA', 'GSL', 'HOU', 'LEW', 'MAL', 'MAR',
 
 
 ```
+
+
+# Appendices
+
+## File moving script
+
+```{r}
+
+
+cci_files <- list.files('/mnt/023ede0b-f66f-4769-939d-421b38967538/cci_lakes_download', 
+                            pattern = '*.nc',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+cci_rds <- list.files('cci_lakes_rds', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+date_frame <- tibble(date = character())
+
+for (i in 5205:6940) {
+  ival <- eval(i)
+  input_file <- cci_files[ival]
+  input_filename <- basename(input_file)
+  
+  ## Extract dates from filename, check if already exists
+  
+  year_extract <- substr(input_filename, 37, 40)
+  month_extract <- substr(input_filename, 41, 42)
+  date_extract <- substr(input_filename, 43, 44)
+  composite_date <- paste0(date_extract, '-', month_extract, '-', year_extract) 
+  composite_date <- tibble(date = composite_date)
+  date_frame <- bind_rows(date_frame, composite_date)
+  print(paste('Completed:', ival, 'of', 6940))
+  
+  }
+
+date_frame <- date_frame %>% 
+  rowid_to_column('date_id')
+
+outdir <- 'cci_lakes_split_2/'
+
+for (i in 1:1736) {
+    ival <- eval(i)
+    date_input <- date_frame %>% 
+      filter(date_id == ival) %>% 
+      deframe()
+    file_selection <- cci_rds %>% str_subset(pattern = date_input)
+    selection_basename <- basename(file_selection)
+    newpath <- paste0(outdir, selection_basename)
+    file.rename(from = file_selection,
+                to = newpath)
+    print(paste('Completed:', ival, 'of', 1736))
+}
+
+```
+
 
