@@ -462,10 +462,105 @@ for (i in 5205:6940) {
 
 ```{r}
 
-cci_l_l <- list.files('cci_lakes_by_lake/', 
+
+cci_rds <- list.files('/run/media/steven/data_storage/cci_lakes_rds/', 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
+
+leftover_path <- '/mnt/33ac07c2-b4a0-4614-8506-d06fb974ca86/florilegium_leftover/'
+
+cci_rds_2 <- list.files(leftover_path, 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+cci_combined <- c(cci_rds, cci_rds_2)
+
+
+year_list <- c('2002', '2003', '2004', '2005', '2006', '2007', 
+               '2008', '2009', '2010', '2011', '2012', '2013', 
+               '2014', '2015', '2016', '2017', '2018', '2019',
+               '2020') %>% 
+  as_tibble() %>% 
+  rename(year = value) %>% 
+  rowid_to_column('year_id')
+
+month_list <- c('01', '02', '03', '04', '05', '06', 
+                '07', '08', '09', '10', '11', '12') %>% 
+  as_tibble() %>% 
+  rename(month = value) %>% 
+  rowid_to_column('month_id')
+
+### Year by year version
+
+
+for (i in 1:nrow(year_list)) {
+    ival = eval(i)
+    year_interior <- year_list %>% filter(year_id == ival)
+    year_subset <- str_subset(cci_combined, 
+                                pattern = year_interior$year)
+    
+    for (j in 1:nrow(month_list)) {
+      jval = eval(j)
+      month_interior <- month_list %>% filter(month_id == jval)
+      month_subset <- str_subset(year_subset, 
+                                pattern = paste0('-', month_interior$month, '-'))
+      
+      filename <- paste0('cci_lakes_weekly/cci_lakes_', 
+                         month_interior$month, '_',
+                         year_interior$year, '.rds')
+      
+      if (file.exists(filename) == FALSE) {
+        
+         month_data <- lapply(month_subset, readRDS) %>% 
+           bind_rows()
+         
+         month_data$date <- dmy(month_data$date)
+         
+         month_data$week <- floor_date(month_data$date, "week")
+         
+         month_data_summarized <- month_data %>%     
+           group_by(x, y, week) %>%
+           summarize(chla_mean = mean(chla_mean),
+              lswt = mean(lswt),
+              lswt_uncertainty = mean(lswt_uncertainty),
+              lswt_quality_level = max(lswt_quality_level),
+              turbidity_mean = mean(turbidity_mean),
+              turbidity_uncertainty = max(turbidity_uncertainty),
+              rw_443 = mean(rw_443),
+              rw_443_u = mean(rw_443_u),
+              rw_560 = mean(rw_560),
+              rw_560_u = mean(rw_560_u))
+         
+         write_rds(month_data_summarized, filename)
+         
+         print(paste('Completed:', month_interior$month, 'of', year_interior$year))
+         
+         rm(month_data, month_data_summarized)
+         
+         gc()
+        
+      } else {
+        
+        print(paste(month_interior$month, 'of', year_interior$year, 'file already exists - skipping!'))
+        
+      }
+    }
+      print(paste('~~~ Completed:', year_interior$year))
+}
+
+
+
+## Within year version
+
+ival = eval(i)
+year_interior <- year_list %>% filter(year_id == ival)
+year_subset <- str_subset(cci_combined, 
+                          pattern = year_interior$year)
+
+
+
 
 for (i in 1:length(cci_l_l)) {
   ival = eval(i)
@@ -1148,14 +1243,20 @@ cci_files <- list.files('/mnt/023ede0b-f66f-4769-939d-421b38967538/cci_lakes_dow
                             full.names = TRUE,
                             recursive = TRUE)
 
-cci_rds <- list.files('cci_lakes_rds', 
+leftover_path <- '/mnt/33ac07c2-b4a0-4614-8506-d06fb974ca86/florilegium_leftover/'
+
+cci_rds_2 <- list.files(leftover_path, 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
 
-date_frame <- tibble(date = character())
+cci_combined <- c(cci_rds, cci_rds_2)
 
-for (i in 5205:6940) {
+###
+
+date_frame_nc <- tibble(date = character())
+
+for (i in 1:length(cci_files)) {
   ival <- eval(i)
   input_file <- cci_files[ival]
   input_filename <- basename(input_file)
@@ -1168,28 +1269,140 @@ for (i in 5205:6940) {
   composite_date <- paste0(date_extract, '-', month_extract, '-', year_extract) 
   composite_date <- tibble(date = composite_date)
   date_frame <- bind_rows(date_frame, composite_date)
-  print(paste('Completed:', ival, 'of', 6940))
+  print(paste('Completed:', ival, 'of', length(cci_files)))
   
-  }
+}
 
-date_frame <- date_frame %>% 
+date_frame_nc <- date_frame_nc %>% 
   rowid_to_column('date_id')
 
-outdir <- 'cci_lakes_split_2/'
 
-for (i in 1:1736) {
-    ival <- eval(i)
-    date_input <- date_frame %>% 
-      filter(date_id == ival) %>% 
-      deframe()
-    file_selection <- cci_rds %>% str_subset(pattern = date_input)
-    selection_basename <- basename(file_selection)
-    newpath <- paste0(outdir, selection_basename)
-    file.rename(from = file_selection,
-                to = newpath)
-    print(paste('Completed:', ival, 'of', 1736))
+date_frame_rds <- tibble(date = character())
+
+for (i in 1:length(cci_combined)) {
+  ival <- eval(i)
+  input_file <- cci_combined[ival]
+  input_filename <- basename(input_file)
+  
+  ## Extract dates from filename, check if already exists
+  
+  year_extract <- substr(input_filename, 17, 20)
+  month_extract <- substr(input_filename, 14, 15)
+  date_extract <- substr(input_filename, 11, 12)
+  composite_date <- paste0(date_extract, '-', month_extract, '-', year_extract) 
+  composite_date <- tibble(date = composite_date)
+  date_frame_rds <- bind_rows(date_frame_rds, composite_date)
+  print(paste('Completed:', ival, 'of', length(cci_combined)))
+  
 }
+
+
+
+duplicates <- date_frame_rds %>% 
+  group_by(date) %>% 
+  summarize(n = n()) %>% 
+  filter(n == 2) %>% 
+  select(date) %>% 
+  rowid_to_column('duplicate_id')
+
+
+
+for (i in 1:nrow(duplicates)) {
+    ival <- eval(i)
+    duplicate_interior <- duplicates %>% filter(duplicate_id == ival)
+    file_interior <- str_subset(cci_combined, 
+                                pattern = duplicate_interior$date)
+    size_1 <- file.info(file_interior[1])
+    size_2 <- file.info(file_interior[2])
+    file_test <- identical(size_1$size, size_2$size)
+    
+    if (file_test == TRUE) {
+      file.remove(file_interior[[1]])
+      print(paste('Removed duplicate', ival, 'of', nrow(duplicates)))
+      
+    } else {
+      print('Files not equal - check!')
+    }
+    
+
+}
+
+
+year_list <- tibble(date = character())
+
+
+for (i in 1:length(cci_combined)) {
+  ival <- eval(i)
+  input_file <- cci_combined[ival]
+  input_filename <- basename(input_file)
+  
+  ## Extract dates from filename, check if already exists
+  
+  year_extract <- substr(input_filename, 17, 20)
+  
+  year_extract <- tibble(date = year_extract)
+  year_list <- bind_rows(year_list, year_extract)
+  print(paste('Completed:', ival, 'of', length(cci_combined)))
+}
+
+year_selection <- year_list %>% distinct(date)
 
 ```
 
+## File copying script
+
+```{r}
+
+cci_rds <- list.files('/run/media/steven/data_storage/cci_lakes_rds/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+leftover_path <- '/mnt/33ac07c2-b4a0-4614-8506-d06fb974ca86/florilegium_leftover/'
+
+cci_rds_2 <- list.files(leftover_path, 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+cci_combined <- c(cci_rds, cci_rds_2)
+
+
+year_list <- c('2002', '2003', '2004', '2005', '2006', '2007', 
+               '2008', '2009', '2010', '2011', '2012', '2013', 
+               '2014', '2015', '2016', '2017', '2018', '2019',
+               '2020') %>% 
+  as_tibble() %>% 
+  rename(year = value) %>% 
+  rowid_to_column('year_id')
+
+month_list <- c('01', '02', '03', '04', '05', '06', 
+                '07', '08', '09', '10', '11', '12') %>% 
+  as_tibble() %>% 
+  rename(month = value) %>% 
+  rowid_to_column('month_id')
+
+###
+
+year_interior <- year_list %>% filter(year_id == 15)
+
+year_subset <- str_subset(cci_combined, 
+                          pattern = year_interior$year) %>% 
+  as_tibble() %>% 
+  rename(path = value) %>% 
+  rowid_to_column('file_id')
+
+newpath <- '/run/media/steven/emul_extra/cci_folder/'
+
+for (i in 1:nrow(year_subset)) {
+  ival = eval(i)
+  file_interior <- year_subset %>% filter(file_id == ival)
+  file_interior <- file_interior$path
+  file.copy(file_interior, newpath)
+  print(paste('Completed:', ival, 'of', length(year_subset)))
+}
+
+
+
+```
 
