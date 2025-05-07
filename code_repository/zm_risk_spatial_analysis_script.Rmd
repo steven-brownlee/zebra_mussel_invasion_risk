@@ -551,45 +551,193 @@ for (i in 1:nrow(year_list)) {
 }
 
 
+```
 
-## Within year version
+## Subset data
 
-ival = eval(i)
-year_interior <- year_list %>% filter(year_id == ival)
-year_subset <- str_subset(cci_combined, 
-                          pattern = year_interior$year)
+```{r}
+# Import assembly frame
+
+assembly_frame <- read_sf('cci_assembly_frame/cci_assembly_frame_sf.gpkg')
+
+### Generate BC subset CCI data
+
+cci_lakes_shapefile <- read_sf('auxiliary_files/cci_lakes_shapefile.gpkg') %>% 
+  st_transform(st_crs(4087))
+
+bc_bbox <- read_sf('auxiliary_files/bc_bbox.gpkg') %>% 
+  st_transform(st_crs(4087))
+
+cci_lakes_bc <- st_intersection(cci_lakes_shapefile, bc_bbox) %>% 
+  select(id, name) %>% 
+  mutate(area = st_area(geom))
+
+cci_lakes_bc$area <- as.numeric(cci_lakes_bc$area)
+
+cci_lakes_bc <- cci_lakes_bc %>% 
+  mutate(area_km = area/1000000)
+
+## North America
+
+na_bbox <- read_sf('auxiliary_files/north_america_bbox.gpkg') %>% 
+  st_transform(st_crs(4087))
+
+cci_lakes_north_america <- st_intersection(cci_lakes_shapefile, na_bbox)%>% 
+  select(id, name) 
+
+### import Guerin et al 2024 data
+
+calcium_data <- read_csv('downloads/guerin_et_al_2024_data/dryad/site-date_calcium_985955.csv') %>% 
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+           crs = 4326) %>% 
+  st_transform(crs = 4087) %>% 
+        mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2])
+
+calcium_coords <- calcium_data %>% 
+    st_drop_geometry() %>% 
+  select(x, y) %>% 
+  distinct(x, y) %>% 
+  rowid_to_column('calcium_coord_id')
+
+calcium_data_tagged <- left_join(calcium_data, 
+                                 calcium_coords, 
+                                 by = c('x', 'y'))
+
+calcium_coords <- calcium_coords %>% 
+  st_as_sf(crs = 4087, 
+           coords = c('x', 'y')) %>% 
+  st_set_crs(4087)
 
 
 
+cci_lakes_calcium_match <- st_join(cci_lakes_north_america, calcium_coords) %>% 
+  drop_na() %>% 
+  group_by(id) %>% 
+  summarize()
 
-for (i in 1:length(cci_l_l)) {
-  ival = eval(i)
-  lake_rds <- read_rds(cci_l_l[ival])
-  lake_rds$week <- floor_date(lake_rds$date, "week")
+assembly_frame_calcium_subset <- st_intersection(assembly_frame, cci_lakes_calcium_match) %>% 
+  mutate(x = sf::st_coordinates(.)[,1],
+         y = sf::st_coordinates(.)[,2]) %>% 
+  st_drop_geometry() %>% 
+  select(x, y)
+
+write_rds(assembly_frame_calcium_subset,'cci_assembly_frame/assembly_frame_calcium_subset.rds')
+
+
+assembly_frame_bc_subset <- st_intersection(assembly_frame, cci_lakes_bc) %>% 
+    mutate(x = sf::st_coordinates(.)[,1],
+         y = sf::st_coordinates(.)[,2]) %>% 
+  select(x, y) %>% 
+  st_drop_geometry()
+
+write_rds(assembly_frame_bc_subset,'cci_assembly_frame/assembly_frame_bc_subset.rds')
+
+# ~~~
+
+assembly_frame_calcium_subset <- readRDS('cci_assembly_frame/assembly_frame_calcium_subset.rds') %>% 
+  rowid_to_column('frame_id') 
+
+assembly_frame_bc_subset <- readRDS('cci_assembly_frame/assembly_frame_bc_subset.rds') %>% 
+  rowid_to_column('frame_id')
+
+# ~~~
+
+date_assembler <- function(frame_sequence, date_frame, assembly_frame) {
   
-  lake_rds_grouped <- lake_rds %>% 
-    group_by(x, y, point_id, week) %>%
-    summarize(chla_mean = mean(chla_mean),
-              lswt = mean(lswt),
-              lswt_uncertainty = mean(lswt_uncertainty),
-              lswt_quality_level = max(lswt_quality_level),
-              turbidity_mean = mean(turbidity_mean),
-              turbidity_uncertainty = max(turbidity_uncertainty),
-              rw_443 = mean(rw_443),
-              rw_443_u = mean(rw_443_u),
-              rw_560 = mean(rw_560),
-              rw_560_u = mean(rw_560_u))
+  product_frame <- tibble(x = numeric(),
+                          y = numeric(),
+                          frame_id = numeric())
   
-  filename <- paste0('cci_lakes_by_lake_weekly/cci_', name_list[ival], '.rds')
-  
-  write_rds(lake_rds_grouped, filename)
-  
-  print(paste('Completed:', ival, 'of', length(cci_l_l)))
-  
+  for (i in sequence) {
+    ival = eval(i)
+    date_interior <- date_frame %>% mutate(frame_id = ival)
+    assembly_frame_interior <- left_join(assembly_frame,
+                                                 date_interior, 
+                                                 by = 'frame_id') %>% 
+      drop_na()
+    product_frame <- bind_rows(product_frame,  assembly_frame_calcium_interior)
+  }
+  return(product_frame)
 }
 
+# ~~~
+
+cci_weekly_rds <- list.files('cci_lakes_weekly/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+cci_bc_path <- 'cci_bc_data/'
+
+cci_calcium_path <- 'cci_calcium_data/'
+
+plan(callr, workers = 12)
+options(future.globals.maxSize = 1.6e+10)
+
+for (i in 1:length(cci_weekly_rds)) {
+  ival <- eval(i)
+  calcium_filename <- paste0(cci_calcium_path, 'calcium_', basename(cci_weekly_rds[ival]))
+  cci_weekly_interior <- readRDS(cci_weekly_rds[ival])
+  dates <- as_tibble(unique(cci_weekly_interior$week)) %>% 
+    rename(week = value)
+  assembly_frame_calc_int <- assembly_frame_calcium_subset
+  
+  assembly_frame_date_attached <- 
+    future_map(1:nrow(assembly_frame_calc_int), 
+               ~date_assembler(.x, 
+                               date_frame = dates,
+                               assembly_frame = assembly_frame_calc_int)) %>% 
+    bind_rows()
+  data_filtered <- left_join(assembly_frame_date_attached,
+                             cci_weekly_interior,
+                             by = c('x', 'y', 'week'))
+  write_rds(data_filtered, calcium_filename)
+  
+  print(paste('Completed:', ival, 'of', length(cci_weekly_rds)))
+  
+
+  }
+  
+
+for (i in 1:length(cci_weekly_rds)) {
+  ival <- eval(i)
+  bc_filename <- paste0(cci_bc_path, 'bc_', basename(cci_weekly_rds[ival]))
+  cci_weekly_interior <- readRDS(cci_weekly_rds[ival])
+  dates <- as_tibble(unique(cci_weekly_interior$week)) %>% 
+    rename(week = value)
+  assembly_frame_bc_int <- assembly_frame_bc_subset
+  
+  assembly_frame_date_attached <- 
+    future_map(1:nrow(assembly_frame_bc_int), 
+               ~date_assembler(.x, 
+                               date_frame = dates,
+                               assembly_frame = assembly_frame_bcd_int)) %>% 
+    bind_rows()
+  data_filtered <- left_join(assembly_frame_date_attached,
+                             cci_weekly_interior,
+                             by = c('x', 'y', 'week'))
+  write_rds(data_filtered, bc_filename)
+  
+  print(paste('Completed:', ival, 'of', length(cci_weekly_rds)))
+  
+
+  }
+  
+  
+  
+  cci_weekly_interior$week <- as.character(cci_weekly_interior$week)
+  
+  
+    
+  
+    
+    
+}
 
 ```
+
+
 
 ## K-nearest neighbour
 
@@ -598,12 +746,13 @@ for (i in 1:length(cci_l_l)) {
 
 # First pass, using k-nearest neighbour filling
 
-nn_filler <- function(sequence, rds_interior) {
+
+nn_filler <- function(rds_interior) {
   
   outer_template <- tibble(x = numeric(),
                          y = numeric(),
                          point_id = numeric(),
-                         date = date(),
+                         week = date(),
                          chla_mean = numeric(),
                          chla_uncertainty = numeric(),
                          lswt = numeric(),
@@ -619,92 +768,110 @@ nn_filler <- function(sequence, rds_interior) {
                          name = character(),
                          id = numeric())
   
-  outer_template$date <- as.Date(outer_template$date)
+  outer_template$week <- as.Date(outer_template$week)
   
-  for (i in sequence) {
-    ival = eval(i)
-    
     date_sequence <- rds_interior %>% 
       ungroup() %>% 
-      select(date) %>% 
-      distinct(date) %>% 
-      arrange(date) %>% 
+      select(week) %>% 
+      distinct(week) %>% 
+      arrange(week) %>% 
       deframe()
     
-    date_selection <- date_sequence[ival]
-    rds_filtered <- rds_interior %>% 
-      filter(date == date_selection)
-    point_id_filtered <- unique(rds_filtered$point_id)
-    point_id_length <- length(point_id_filtered)
-    
-    for (j in 1:eval(point_id_length)) {
-      jval <- eval(j)
-      rds_point_data <- rds_filtered %>% 
-        filter(point_id == point_id_filtered[j])
-      rds_point <- rds_filtered %>% 
-        filter(point_id == point_id_filtered[j]) %>% 
-        st_as_sf(coords = c('x', 'y'),
+    for (i in 1:length(date_sequence)) {
+      ival = eval(i)
+      date_selection <- date_sequence[ival]
+      rds_filtered <- rds_interior %>% 
+        filter(week == date_selection) %>% 
+        group_by(x, y) %>% 
+        mutate(point_id = cur_group_id()) %>% 
+        ungroup()
+      
+      point_id_filtered <- unique(rds_filtered$point_id)
+      point_id_length <- length(point_id_filtered)
+      
+          for (j in 1:eval(point_id_length)) {
+            jval <- eval(j)
+            rds_point_data <- rds_filtered %>% 
+              filter(point_id == point_id_filtered[j])
+            rds_point <- rds_filtered %>% 
+              filter(point_id == point_id_filtered[j]) %>% 
+              st_as_sf(coords = c('x', 'y'),
                crs = 4087) %>% 
-        select(geometry)
-      
-      rds_comparison <- rds_filtered %>% 
-        filter(point_id != point_id_filtered[j]) %>% 
-            st_as_sf(coords = c('x', 'y'),
-               crs = 4087)
-      
-      rds_nn <- suppressWarnings(suppressMessages(st_join(rds_point, 
+              select(geometry)
+            
+            rds_comparison <- rds_filtered %>% 
+              filter(point_id != point_id_filtered[j]) %>% 
+              st_as_sf(coords = c('x', 'y'),
+                       crs = 4087)
+            
+            rds_nn <- suppressWarnings(suppressMessages(st_join(rds_point, 
                                                         rds_comparison, 
-                                                        st_nn, k = 5))) %>% 
-        mutate(grouping_id = 1)
-    
-      
-      rds_nn_summ <- rds_nn %>% 
-        group_by(grouping_id) %>% 
-        summarize(chla_mean = mean(chla_mean),
+                                                        st_is_within_distance, 
+                                                        dist = 2000))) %>% 
+              mutate(grouping_id = 1)
+            
+            rds_nn_summ <- rds_nn %>% 
+              group_by(grouping_id) %>% 
+              summarize(chla_mean = mean(chla_mean),
                 lswt_mean = mean(lswt),
                 turbidity_mean = mean(turbidity_mean),
                 rw_443_mean = mean(rw_443),
                 rw_560_mean = mean(rw_560)) %>% 
-        st_drop_geometry()
-      
-      eval_criteria <- rds_point_data %>% 
-        select(x, y, point_id, chla_mean, lswt, turbidity_mean,
+              st_drop_geometry()
+            
+            eval_criteria <- rds_point_data %>% 
+              select(x, y, point_id, chla_mean, lswt, turbidity_mean,
                rw_443, rw_560) 
-      
-      if (is.na(eval_criteria$chla_mean) == TRUE) {
-        rds_point_data$chla_mean <- rds_nn_summ$chla_mean
+            
+            if (is.na(eval_criteria$chla_mean) == TRUE) {
+              rds_point_data$chla_mean <- rds_nn_summ$chla_mean
         }
-      
-      if (is.na(eval_criteria$lswt) == TRUE) {
-        rds_point_data$lswt <- 
-          rds_nn_summ$lswt_mean
+            if (is.na(eval_criteria$lswt) == TRUE) {
+              rds_point_data$lswt <- rds_nn_summ$lswt_mean
         }
-      if (is.na(eval_criteria$turbidity_mean) == TRUE) {
-          rds_point_data$turbidity_mean <- rds_nn_summ$turbidity_mean
+            if (is.na(eval_criteria$turbidity_mean) == TRUE) {
+              rds_point_data$turbidity_mean <- rds_nn_summ$turbidity_mean
+      }
+            if (is.na(eval_criteria$rw_443) == TRUE) {
+              rds_point_data$rw_443 <- rds_nn_summ$rw_443_mean
+      }
+            if (is.na(eval_criteria$rw_560) == TRUE) {
+              rds_point_data$rw_560 <- rds_nn_summ$rw_560_mean
       }
       
-        if (is.na(eval_criteria$rw_443) == TRUE) {
-          rds_point_data$rw_443 <- rds_nn_summ$rw_443_mean
-      }
-      
-         if (is.na(eval_criteria$rw_560) == TRUE) {
-          rds_point_data$rw_560 <- rds_nn_summ$rw_560_mean
-      }
-      
-      outer_template <- bind_rows(outer_template, rds_point_data)
+          outer_template <- bind_rows(outer_template, rds_point_data)
 
     }
-}
+      
+    }
+    
+  
    return(outer_template)
 }
 
 ###
 
-cci_l_l <- list.files('cci_lakes_by_lake_weekly/', 
+cci_l_l <- list.files('cci_lakes_weekly/', 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
+
 ### 
+
+
+for (i in 1:length(cci_l_l)) {
+  ival = eval(i)
+  lake_rds <- read_rds(cci_l_l[ival])
+  filename <- paste0('cci_knn/', basename(cci_l_l[ival]))
+  
+  lake_filled_knn <- future_map(nn_filler(rds_interior = lake_rds)) %>% 
+    bind_rows()
+  
+  write_rds(lake_filled_knn, filename)
+  print(paste('Completed:', cci_l_l[ival]))
+  
+}
+
 
 # Advesperascit
 
@@ -1384,7 +1551,7 @@ month_list <- c('01', '02', '03', '04', '05', '06',
 
 ###
 
-year_interior <- year_list %>% filter(year_id == 15)
+year_interior <- year_list %>% filter(year_id == 19)
 
 year_subset <- str_subset(cci_combined, 
                           pattern = year_interior$year) %>% 
@@ -1394,12 +1561,13 @@ year_subset <- str_subset(cci_combined,
 
 newpath <- '/run/media/steven/emul_extra/cci_folder/'
 
+
 for (i in 1:nrow(year_subset)) {
   ival = eval(i)
   file_interior <- year_subset %>% filter(file_id == ival)
   file_interior <- file_interior$path
   file.copy(file_interior, newpath)
-  print(paste('Completed:', ival, 'of', length(year_subset)))
+  print(paste('Completed:', ival, 'of', nrow(year_subset)))
 }
 
 
