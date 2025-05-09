@@ -878,10 +878,17 @@ for (i in 1:length(cci_bc)) {
   lake_rds <- read_rds(cci_bc[ival])
   filename <- paste0('cci_knn/bc/', basename(cci_bc[ival]))
   
+  if(file.exists(filename) == TRUE) {
+    
+    print(paste('File already generated for', ival, 'of', length(cci_bc), 'skipping!'))
+    
+  } else {
+  
   lake_filled_knn <- nn_filler(lake_rds)
   
   write_rds(lake_filled_knn, filename)
-  print(paste('Completed:', cci_bc[ival]))
+  print(paste('Completed:', cci_bc[ival])) 
+  }
   
 }
 
@@ -890,10 +897,17 @@ for (i in 1:length(cci_calcium)) {
   lake_rds <- read_rds(cci_calcium[ival])
   filename <- paste0('cci_knn/calc/', basename(cci_calcium[ival]))
   
+  if(file.exists(filename) == TRUE) {
+    
+    print(paste('File already generated for', ival, 'of', length(cci_calcium), 'skipping!'))
+    
+  } else {
+  
   lake_filled_knn <- nn_filler(lake_rds)
   
   write_rds(lake_filled_knn, filename)
-  print(paste('Completed:', cci_calcium[ival]))
+  print(paste('Completed:', cci_bc[ival])) 
+  }
   
 }
 
