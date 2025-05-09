@@ -737,10 +737,7 @@ nn_inner <- function(point_sequence, point_id_length, rds_filtered) {
                          rw_443 = numeric(),
                          rw_443_u = numeric(),
                          rw_560 = numeric(),
-                         rw_560_u = numeric(),
-                         group_id = numeric(),
-                         name = character(),
-                         id = numeric())
+                         rw_560_u = numeric())
   
   inner_template$week <- as.Date(inner_template$week)
   
