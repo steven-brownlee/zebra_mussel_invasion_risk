@@ -747,15 +747,15 @@ nn_inner <- function(point_sequence, point_id_length, rds_filtered) {
    for (j in point_sequence) {
             jval <- eval(j)
             rds_point_data <- rds_filtered %>% 
-              filter(point_id == point_id_filtered[j])
+              filter(point_id == jval)
             rds_point <- rds_filtered %>% 
-              filter(point_id == point_id_filtered[j]) %>% 
+              filter(point_id == jval) %>% 
               st_as_sf(coords = c('x', 'y'),
                crs = 4087) %>% 
               select(geometry)
             
             rds_comparison <- rds_filtered %>% 
-              filter(point_id != point_id_filtered[j]) %>% 
+              filter(point_id != jval) %>% 
               st_as_sf(coords = c('x', 'y'),
                        crs = 4087)
             
@@ -847,7 +847,7 @@ nn_filler <- function(rds_interior) {
       point_id_length <- length(point_id_filtered)
 
       
-      rds_filled <- future_map(1:point_id_length, 
+      rds_filled <- future_map(point_id_filtered, 
                                ~nn_inner(point_sequence = .x, point_id_length = point_id_length,
                                          rds_filtered = rds_filtered)) %>% 
         bind_rows()
