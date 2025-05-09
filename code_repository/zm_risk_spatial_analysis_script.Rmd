@@ -51,6 +51,7 @@ library(tidyverse)
 library(rcartocolor)
 library(sfnetworks)
 library(qgisprocess)
+library(futureverse)
 library(future)
 library(future.callr)
 library(purrr)
@@ -792,8 +793,6 @@ nn_inner <- function(point_sequence, point_id_length, rds_filtered) {
       }
       
           inner_template <- bind_rows(inner_template, rds_point_data)
-          print(paste('Completed:', jval, 'of', point_id_length))
-
     }
   
   return(inner_template)
@@ -871,7 +870,7 @@ cci_calcium <- list.files('cci_calcium_data/',
 
 ### 
 
-plan(callr, workers = 10)
+plan(callr, workers = 20)
 options(future.globals.maxSize = 1.6e+10)
 
 for (i in 1:length(cci_bc)) {
@@ -889,7 +888,7 @@ for (i in 1:length(cci_bc)) {
 for (i in 1:length(cci_calcium)) {
   ival = eval(i)
   lake_rds <- read_rds(cci_calcium[ival])
-  filename <- paste0('cci_knn/', basename(cci_calcium[ival]))
+  filename <- paste0('cci_knn/calc/', basename(cci_calcium[ival]))
   
   lake_filled_knn <- nn_filler(lake_rds)
   
@@ -899,21 +898,33 @@ for (i in 1:length(cci_calcium)) {
 }
 
 
+```
+
+## ImputeTS interpolation
+
+```{r}
+
 # Second pass, using imputeTS
 
 
-cci_knn <- list.files('cci_knn/', 
+cci_bc_knn <- list.files('cci_knn/bc/', 
+                            pattern = '*.rds',
+                            full.names = TRUE,
+                            recursive = TRUE)
+
+cci_calc_knn <- list.files('cci_knn/calc/', 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
 
 
-for (i in 1:length(cci_knn)) {
+
+for (i in 1:length(cci_bc_knn)) {
   ###
   
   ival <- eval(i)
   
-  int_slice <- readRDS(cci_knn[ival]) %>% 
+  int_slice <- readRDS(cci_bc_knn[ival]) %>% 
     rename(lswt = lwst)
   
   ##
@@ -992,11 +1003,93 @@ for (i in 1:length(cci_knn)) {
 }
 
 
-kootenay <- readRDS('cci_interpolated_test/cci_kootenay.rds') %>% 
-  select(x, y, date, chla_mean, turbidity_mean, lswt,
-         rw_443, rw_560)
+for (i in 1:length(cci_calc_knn)) {
+  ###
+  
+  ival <- eval(i)
+  
+  int_slice <- readRDS(cci_calc_knn[ival]) %>% 
+    rename(lswt = lwst)
+  
+  ##
+  
+  int_slice_points <- unique(int_slice$point_id)
+  
+  int_slice_length <- length(int_slice_points)
+  
+  ##
+
+  chla <- int_slice %>% 
+    select(x, y, point_id, date, chla_mean)
+  
+  temp <- int_slice %>% 
+    select(x, y, point_id, date, lswt)
+  
+  turb <- int_slice %>% 
+    select(x, y, point_id, point_id, date, turbidity_mean)
+  
+  rw_443 <- int_slice %>% 
+    select(x, y, point_id, point_id, date, rw_443)
+  
+  rw_560 <- int_slice %>% 
+    select(x, y, point_id, point_id, date, rw_560)
+  
+  
+  date_frame <- int_slice %>% 
+    select(-chla_mean, -lswt, -turbidity_mean,
+           -rw_443, -rw_560)
+  
+  ##
+  
+  chla <- chla %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine')
+  
+  temp <- temp %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine') 
+  
+  turb <- turb %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine')
+  
+  rw_443 <- rw_443 %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine')
+   
+  rw_560 <- rw_560 %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine')
+  
+
+  assembly_frame <- left_join(date_frame, chla)
+  
+  assembly_frame <- left_join(assembly_frame, temp)
+  
+  assembly_frame <- left_join(assembly_frame, turb)
+  
+  assembly_frame <- left_join(assembly_frame, rw_443)
+  
+  assembly_frame <- left_join(assembly_frame, rw_560)
+  
+  ##
+  
+  filename <- paste0('cci_interpolated_test/', basename(cci_knn[ival]))
+  
+  write_rds(assembly_frame, filename)
+  
+  print(paste('Completed:', ival, 'of', length(cci_knn)))
+}
+
 
 ```
+
+
 
 #5.) Import calcium data, interpolate
 
