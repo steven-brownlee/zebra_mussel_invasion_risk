@@ -924,14 +924,114 @@ for (i in 1:length(cci_calcium)) {
 cci_bc_knn <- list.files('cci_knn/bc/', 
                             pattern = '*.rds',
                             full.names = TRUE,
-                            recursive = TRUE)
+                            recursive = TRUE) %>% 
+  lapply(readRDS) %>% 
+  bind_rows()
+
 
 cci_calc_knn <- list.files('cci_knn/calc/', 
                             pattern = '*.rds',
                             full.names = TRUE,
                             recursive = TRUE)
 
+###
 
+cci_bc_knn <- cci_bc_knn %>% group_by(x, y, week) %>% 
+          mutate(spacetime_id = cur_group_id()) %>% 
+  ungroup() %>% 
+  select(-point_id, -frame_id)
+
+###
+
+  chla <- cci_bc_knn %>% 
+    select(x, y, spacetime_id, week, chla_mean)
+  
+  temp <- cci_bc_knn %>% 
+    select(x, y, spacetime_id, week, lswt)
+  
+  turb <- cci_bc_knn %>% 
+    select(x, y, spacetime_id, week, turbidity_mean)
+  
+  rw_443 <- cci_bc_knn %>% 
+    select(x, y, spacetime_id, week, rw_443)
+  
+  rw_560 <- cci_bc_knn %>% 
+    select(x, y, spacetime_id, week, rw_560)
+  
+  ###
+  
+   date_frame <- cci_bc_knn %>% 
+    select(x, y, spacetime_id, week, lswt_uncertainty, lswt_quality_level,
+           turbidity_uncertainty, rw_443_u, rw_560_u)
+
+  
+  ###
+  
+   chla <- chla %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine') %>% 
+    ungroup() %>% 
+    distinct(spacetime_id,
+             .keep_all = TRUE) %>% 
+    select(-x, -y, -week)
+  
+  
+  temp <- temp %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine') %>% 
+    ungroup() %>% 
+    distinct(spacetime_id,
+             .keep_all = TRUE) %>% 
+    select(-x, -y, -week)
+  
+  
+  rw_443 <- rw_443 %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine') %>% 
+    ungroup() %>% 
+    distinct(spacetime_id,
+             .keep_all = TRUE) %>% 
+    select(-x, -y, -week)
+  
+   
+  rw_560 <- rw_560 %>% 
+    group_by(x, y) %>% 
+    group_modify(~ as.data.frame(na_interpolation(.x)),
+                 option = 'stine') %>% 
+    ungroup() %>% 
+    distinct(spacetime_id,
+             .keep_all = TRUE) %>% 
+    select(-x, -y, -week)
+  
+  
+  gc()
+  
+  
+  combined_frame <- left_join(date_frame, chla, 
+                              by = 'spacetime_id')
+  
+  combined_frame <- left_join(combined_frame, temp, 
+                              by = 'spacetime_id')
+    
+ # combined_frame <- left_join(combined_frame, turb, 
+ #                             by = c('x', 'y', 'point_id', 'week'))
+    
+  combined_frame <- left_join(combined_frame, rw_443, 
+                              by = 'spacetime_id')
+    
+  combined_frame <- left_join(combined_frame, rw_560, 
+                              by = 'spacetime_id')
+  
+  write_rds(combined_frame, 'cci_interpolated/combined_frame.rds')
+  
+  
+###
+  
+  
+###
 
 for (i in 1:length(cci_bc_knn)) {
   ###
@@ -1154,7 +1254,11 @@ calcium_data_filtered <- calcium_data %>%
       mutate(x = sf::st_coordinates(.)[,1],
                 y = sf::st_coordinates(.)[,2]) %>% 
   st_drop_geometry() %>% 
-  filter(date > dmy('01-01-2002'))
+  filter(date > dmy('01-01-2002')) %>% 
+  group_by(x, y, date) %>% 
+  mutate(sample_id = cur_group_id())
+
+combined_frame <- readRDS('cci_interpolated/combined_frame.rds')
 
 ###
 
@@ -1181,6 +1285,91 @@ cci_lakes_poly_matched <- cci_lakes_north_america %>%
 #write_sf(cci_lakes_poly_matched, 'auxiliary_files/cci_lakes_calcium_match.gpkg')
 
 ## Retrieve assembly frame
+
+calcium_assembly_frame <- readRDS('cci_assembly_frame/assembly_frame_calcium_subset.rds')
+
+calcium_assembly_frame <- calcium_assembly_frame %>% 
+  group_by(x, y) %>% 
+  mutate(point_id = cur_group_id()) %>% 
+  ungroup()
+
+calcium_af_sf <- st_as_sf(calcium_assembly_frame, coords = c('x', 'y'),
+                       crs = 4087) %>% 
+        mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2])
+
+calcium_df_sf <- st_as_sf(calcium_data_filtered, coords = c('x', 'y'),
+                       crs = 4087) 
+
+#write_sf(calcium_af_sf, '/home/steven/Downloads/calcium_af.gpkg')
+
+#write_sf(calcium_df_sf, '/home/steven/Downloads/calcium_df.gpkg')
+
+
+western_na_bbox <- read_sf('auxiliary_files/western_na_bbox.gpkg')
+
+calcium_sites <- st_intersection(calcium_df_sf, western_na_bbox)
+
+calcium_assembly <- st_intersection(calcium_af_sf, western_na_bbox)
+
+#calcium_af_sf_clipped <- st_intersection(calcium_af_sf, calcium_site_buffer)
+
+
+
+calcium_test <- st_join(calcium_sites, 
+                        calcium_assembly,   
+                        st_is_within_distance, 
+                        dist = 2000) 
+
+calcium_test$date <- ymd(calcium_test$date)
+
+calcium_test <- calcium_test %>% 
+  mutate(woy = week(date))
+
+calcium_data_matches <- calcium_test %>% select(x, y) %>% 
+  distinct(x, y) %>% 
+  rowid_to_column('match_id')
+
+###
+
+full_data_filtered <- combined_frame %>% 
+  filter(x %in% calcium_data_matches$x) %>% 
+  filter(y %in% calcium_data_matches$y) %>% 
+  select(x, y, week, rw_443, rw_560) %>% 
+  mutate(calcium_index = (rw_443 - rw_560) / (rw_443 + rw_560)) 
+
+full_data_filtered$week <- ymd(full_data_filtered$week)
+
+full_data_filtered <- full_data_filtered %>% 
+  mutate(woy = week(week))
+
+test_join <- left_join(calcium_test, full_data_filtered, by = c('x', 'y', 'woy')) %>% 
+  drop_na()
+
+
+test_summarized <- test_join %>% group_by(x, y, woy) %>% 
+  summarize(mean_calcium_index = mean(calcium_index),
+            mean_calcium_conc = mean(mean)) %>% 
+  rename(calcium_index = mean_calcium_index,
+         calcium_conc = mean_calcium_conc)
+
+calcium_model <- lm(calcium_conc ~ calcium_index, data = test_summarized)
+
+write_rds(calcium_model, 'auxiliary_files/calcium_model.rds')
+
+
+test_join <- test_join %>% 
+#  mutate(pred_calc = predict(calcium_model, pick(calcium_index))) %>% 
+  mutate(diff_pred = mean - pred_calc)
+
+
+
+calc_model_summary <- test_join %>% summarize(mean_diff_pred = mean(diff_pred),
+                                              sd_diff_pred = sd(diff_pred))
+
+
+
+
 
 cci_assembly <- list.files('cci_interpolated_test/', 
                             pattern = '*.rds',
@@ -1255,6 +1444,294 @@ cci_calcium_joined <- read_rds('auxiliary_files/cci_calcium_joined.rds') %>%
 
 # 6.) Suitability modeling
 
+```{r}
+
+okanagan_cci_outline <- cci_lakes_bc %>% filter(name == 'Okanagan')
+
+okanagan <- combined_frame %>% st_as_sf(coords = c('x', 'y'), crs = 4087) %>% 
+  st_intersection(okanagan_cci_outline)
+
+write_sf(okanagan, '/home/steven/Downloads/okanagan.gpkg')
+
+okanagan <- read_sf('/home/steven/Downloads/okanagan.gpkg')
+
+okanagan <- okanagan %>%
+  mutate(calcium_index = (rw_443 - rw_560) / (rw_443 + rw_560)) 
+
+okanagan <- okanagan %>% 
+  mutate(pred_calc = predict(calcium_model, pick(calcium_index))) 
+
+okanagan_display <- okanagan %>%  mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>% 
+  select(x, y, week, spacetime_id, chla_mean,
+                                        lswt, calcium_index, pred_calc) %>% 
+  filter(week > ymd('2016-01-01')) %>% 
+  st_drop_geometry() %>% mutate(chla_mg_l = chla_mean*0.001) %>% 
+  mutate(carbon_conc = chla_mg_l/0.01) %>% 
+  mutate(lswt_celsius = lswt - 273.15)
+
+okanagan_display$month <- floor_date(okanagan_display$week, "month") 
+
+okanagan_display <- okanagan_display %>% group_by(x, y, month) %>% 
+  summarize(carbon_conc = mean(carbon_conc),
+            lswt_celsius = mean(lswt_celsius),
+            pred_calc = mean(pred_calc)) %>% 
+  mutate(carbon_conc = case_when(carbon_conc > 5 ~ NA,
+                                 carbon_conc < 5 ~ carbon_conc))
+
+okanagan_stars <- okanagan_display %>% st_as_stars(coords = c('x', 'y'),
+                                                   dims = c('x', 'y', 'month'),
+                                                   crs = 4087) %>% 
+  st_set_crs(4087) 
+
+okanagan_stars_test <- okanagan_stars %>% filter(month == '2020-07-01') %>% 
+  st_transform(crs = 4326)
+
+
+###
+
+library(patchwork)
+
+figure_path = '/home/steven/Documents/workspace/extracurriculars/iscbc_2025/figures/'
+
+ok_temp <- ggplot() + geom_stars(data = okanagan_stars_test, aes(fill = lswt_celsius),
+                      na.action = na.omit) +
+scale_fill_paletteer_c("grDevices::Plasma",
+                 na.value = 'grey80',
+                direction = 1,
+                name = 'Lake surface \n water temperature \n (degrees Celsius)') +
+    theme_classic(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 20) +
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20),
+        strip.text = element_text(size=20))
+
+
+ok_carbon <- ggplot() + geom_stars(data = okanagan_stars_test, aes(fill = carbon_conc),
+                      na.action = na.omit) +
+  scale_fill_paletteer_c("grDevices::Dark Mint",
+                 na.value = 'grey80',
+                direction = 1,
+                name = 'Carbon concentration \n (mg/L C)') +
+      theme_classic(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 20) +
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20),
+        strip.text = element_text(size=20))
+
+ok_calc <- ggplot() + geom_stars(data = okanagan_stars_test, aes(fill = pred_calc)) +
+   scale_fill_paletteer_c("grDevices::Purple-Blue",
+                 na.value = 'grey80',
+                direction = 1,
+                name = 'Predicted \n calcium concentration \n (mg/L Ca2+)') +
+      theme_classic(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 20) +
+  theme(legend.title = element_text(size=20),
+        legend.text = element_text(size=20),
+        strip.text = element_text(size=20))
+
+ok_combined <- ok_temp + ok_calc + ok_carbon
+
+ok_combined
+
+ggsave(paste0(figure_path, 'ok_showcase.png'), 
+       width = 30, 
+       height = 20, 
+       units = 'in')
+
+###
+
+ok_suit <- okanagan_stars %>% mutate(temp_score = 
+                                      ifelse(lswt_celsius < 0 | lswt_celsius > 30, 0, 1),
+                                    carbon_score = 
+                                      ifelse(carbon_conc > 0.36, 1, 0),
+                                    calc_score = 
+                                      ifelse(pred_calc > 10, 1, 0)) %>% 
+    mutate(final_suit = temp_score + calc_score + carbon_score) %>% 
+  mutate(final_suit = case_when(final_suit == 1 ~ 'Unsuitable',
+                                final_suit == 2 ~ 'Unsuitable',
+                                final_suit == 3 ~ 'Suitable',
+                                final_suit == NA ~ 'Unsuitable'))
+
+ok_suit_display <- ok_suit %>% filter(month >= ymd('2020-01-01')) %>% 
+  filter(month <= ymd('2020-12-01')) %>% 
+  select(temp_score, calc_score, carbon_score, final_suit)
+
+ok_suit_summer <- ok_suit %>% filter(month >= ymd('2020-05-01')) %>% 
+  filter(month <= ymd('2020-10-01')) %>% 
+  select(temp_score, calc_score, carbon_score, final_suit) 
+
+
+ok_suit_winter <- ok_suit %>% filter(month >= ymd('2019-10-01')) %>% 
+  filter(month <= ymd('2020-04-01')) %>% 
+  select(temp_score, calc_score, carbon_score, final_suit) 
+
+
+
+
+ok_w_1 <- ok_suit %>% filter(month == ymd('2019-10-01')) %>% 
+  st_transform(4326)
+
+ok_w_2 <-  ok_suit %>% filter(month == ymd('2019-11-01'))
+
+ok_w_3 <-  ok_suit %>% filter(month == ymd('2019-12-01'))
+
+ok_w_4 <-  ok_suit %>% filter(month == ymd('2020-01-01'))
+
+ok_w_5 <-  ok_suit %>% filter(month == ymd('2020-02-01'))
+
+ok_w_6 <-  ok_suit %>% filter(month == ymd('2020-03-01'))
+
+ok_w_7 <-  ok_suit %>% filter(month == ymd('2020-04-01'))
+
+###
+
+
+ok_w_1_plot   <- ggplot() + geom_stars(data = ok_w_1, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+ok_w_2_plot   <- ggplot() + geom_stars(data = ok_w_2, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+
+ok_w_3_plot   <- ggplot() + geom_stars(data = ok_w_3, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+
+ok_w_4_plot   <- ggplot() + geom_stars(data = ok_w_4, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+
+ok_w_5_plot   <- ggplot() + geom_stars(data = ok_w_5, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+
+ok_w_6_plot   <- ggplot() + geom_stars(data = ok_w_6, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+
+
+ok_w_7_plot  <- ggplot() + geom_stars(data = ok_w_7, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+
+
+ok_comb_w <- ok_w_1_plot  + ok_w_2_plot  + ok_w_3_plot  + ok_w_4_plot  + ok_w_5_plot  + ok_w_6_plot  + ok_w_7_plot 
+
+
+ok_s_1 <- ok_suit %>% filter(month == ymd(''))
+
+ok_s_2 <-  ok_suit %>% filter(month == ymd(''))
+
+ok_s_3 <-  ok_suit %>% filter(month == ymd(''))
+
+ok_s_4 <-  ok_suit %>% filter(month == ymd(''))
+
+ok_s_5 <-  ok_suit %>% filter(month == ymd(''))
+
+ok_s_6 <-  ok_suit %>% filter(month == ymd(''))
+
+ok_s_6 <-  ok_suit %>% filter(month == ymd(''))
+
+
+ok_suit_summer <- st_transform(ok_suit_summer, 4326)
+
+ok_suit_winter <- st_transform(ok_suit_winter, 4326)
+
+ok_suit_summer_plot <- ggplot() + geom_stars(data = ok_suit_summer, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+ggsave(paste0(figure_path, 'ok_suit_summer.png'), 
+       width = 30, 
+       height = 30, 
+       units = 'in')
+
+
+ok_suit_winter_plot <- ggplot() + geom_stars(data = ok_suit_winter, aes(fill = final_suit),
+                      na.action = na.omit) +
+    facet_wrap(~month, nrow = 1) +
+  scale_fill_manual(values = c('mediumpurple2', 'goldenrod'),
+                    name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+ok_suit_winter_plot
+
+ggsave(paste0(figure_path, 'ok_suit_winter.png'), 
+       width = 40, 
+       height = 30, 
+       units = 'in')
+
+```
+
+
 # 7.) Suitability composition modeling
 
 # ~~ Supplemental
@@ -1263,7 +1740,7 @@ cci_calcium_joined <- read_rds('auxiliary_files/cci_calcium_joined.rds') %>%
 
 ```{r}
 
-  cci_lakes_calcium_matchup_polygon <- read_sf('auxiliary_files/cci_calcium_matchup_polygon.gpkg')
+cci_lakes_calcium_matchup_polygon <- read_sf('auxiliary_files/cci_calcium_matchup_polygon.gpkg')
 
 
   cci_slices <- list.files('cci_lakes_slices/', 
