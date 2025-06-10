@@ -1446,6 +1446,10 @@ cci_calcium_joined <- read_rds('auxiliary_files/cci_calcium_joined.rds') %>%
 
 ```{r}
 
+combined_frame <- readRDS('cci_interpolated/combined_frame.rds')
+
+calcium_model <- readRDS('auxiliary_files/calcium_model.rds')
+
 okanagan_cci_outline <- cci_lakes_bc %>% filter(name == 'Okanagan')
 
 okanagan <- combined_frame %>% st_as_sf(coords = c('x', 'y'), crs = 4087) %>% 
@@ -1539,7 +1543,6 @@ ggsave(paste0(figure_path, 'ok_showcase.png'),
        height = 20, 
        units = 'in')
 
-###
 
 ok_suit <- okanagan_stars %>% mutate(temp_score = 
                                       ifelse(lswt_celsius < 0 | lswt_celsius > 30, 0, 1),
@@ -1547,7 +1550,7 @@ ok_suit <- okanagan_stars %>% mutate(temp_score =
                                       ifelse(carbon_conc > 0.36, 1, 0),
                                     calc_score = 
                                       ifelse(pred_calc > 10, 1, 0)) %>% 
-    mutate(final_suit = temp_score + calc_score + carbon_score) %>% 
+  mutate(final_suit = temp_score + calc_score + carbon_score) %>% 
   mutate(final_suit = case_when(final_suit == 1 ~ 'Unsuitable',
                                 final_suit == 2 ~ 'Unsuitable',
                                 final_suit == 3 ~ 'Suitable',
@@ -1733,6 +1736,217 @@ ggsave(paste0(figure_path, 'ok_suit_winter.png'),
 
 
 # 7.) Suitability composition modeling
+
+```{r}
+###
+
+combined_frame <- readRDS('cci_interpolated/combined_frame.rds')
+
+calcium_model <- readRDS('auxiliary_files/calcium_model.rds')
+
+okanagan_cci_outline <- cci_lakes_bc %>% filter(name == 'Okanagan')
+
+okanagan <- combined_frame %>% st_as_sf(coords = c('x', 'y'), crs = 4087) %>% 
+  st_intersection(okanagan_cci_outline)
+
+write_sf(okanagan, '/home/steven/Downloads/okanagan.gpkg')
+
+okanagan <- read_sf('/home/steven/Downloads/okanagan.gpkg')
+
+okanagan <- okanagan %>%
+  mutate(calcium_index = (rw_443 - rw_560) / (rw_443 + rw_560)) 
+
+okanagan <- okanagan %>% 
+  mutate(pred_calc = predict(calcium_model, pick(calcium_index))) 
+
+okanagan_display <- okanagan %>%  mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>% 
+  select(x, y, week, spacetime_id, chla_mean,
+                                        lswt, calcium_index, pred_calc) %>% 
+  filter(week > ymd('2016-01-01')) %>% 
+  st_drop_geometry() %>% mutate(chla_mg_l = chla_mean*0.001) %>% 
+  mutate(carbon_conc = chla_mg_l/0.01) %>% 
+  mutate(lswt_celsius = lswt - 273.15)
+
+okanagan_display$month <- floor_date(okanagan_display$week, "month") 
+
+okanagan_display <- okanagan_display %>% group_by(x, y, month) %>% 
+  summarize(carbon_conc = mean(carbon_conc),
+            lswt_celsius = mean(lswt_celsius),
+            pred_calc = mean(pred_calc)) %>% 
+  mutate(carbon_conc = case_when(carbon_conc > 5 ~ NA,
+                                 carbon_conc < 5 ~ carbon_conc))
+
+okanagan_stars <- okanagan_display %>% st_as_stars(coords = c('x', 'y'),
+                                                   dims = c('x', 'y', 'month'),
+                                                   crs = 4087) %>% 
+  st_set_crs(4087) 
+
+okanagan_stars_test <- okanagan_stars %>% filter(month == '2020-07-01') %>% 
+  st_transform(crs = 4326)
+
+cell_num <- ok_frame %>% select(x, y) %>% distinct()
+
+###
+
+temp_lower <- c(0:7)
+
+temp_upper <- c(35:25)
+
+carbon_mid <- seq(0, 1, by = 0.05)
+
+calc_mid <- c(5:15)
+
+
+###
+
+ok_frame <- okanagan_stars %>% 
+  as_tibble() %>% 
+  distinct(x, y, month) %>% 
+  group_by(x, y, month) %>% 
+  mutate(spacetime_id = cur_group_id()) %>% 
+  ungroup()
+
+# temp_lower 
+  
+temp_lower_frame <- ok_frame
+
+for (i in 1:length(temp_lower)) {
+  ival <- eval(i)
+  temp_lower_int <- temp_lower[ival]
+  lower_temp_suit <- paste0('trial_lower_temp_', as.character(temp_lower_int))
+  int_frame <- okanagan_stars %>% mutate(temp_score = 
+                                      ifelse(lswt_celsius < temp_lower_int | lswt_celsius > 30, 0, 1),
+                                    carbon_score = 
+                                      ifelse(carbon_conc > 0.36, 1, 0),
+                                    calc_score = 
+                                      ifelse(pred_calc > 10, 1, 0)) %>% 
+  mutate(final_suit = temp_score + calc_score + carbon_score) %>% 
+  mutate(final_suit = case_when(final_suit == 1 ~ 0,
+                                final_suit == 2 ~ 0,
+                                final_suit == 3 ~ 1,
+                                final_suit == NA ~ 0)) %>% 
+    as_tibble() %>% 
+    select(x, y, month, final_suit) %>% 
+    rename(!!lower_temp_suit := final_suit)
+  
+  temp_lower_frame <- left_join(temp_lower_frame, int_frame, by = c('x', 'y', 'month'))
+  print(paste('Completed:', ival, 'of', length(temp_lower)))
+}
+
+# temp_upper
+
+temp_upper_frame <- ok_frame
+
+for (i in 1:length(temp_upper)) {
+  ival <- eval(i)
+  temp_upper_int <- temp_upper[ival]
+  upper_temp_suit <- paste0('trial_upper_temp_', as.character(temp_upper_int))
+  int_frame <- okanagan_stars %>% mutate(temp_score = 
+                                      ifelse(lswt_celsius < 0 | lswt_celsius > temp_upper_int, 0, 1),
+                                    carbon_score = 
+                                      ifelse(carbon_conc > 0.36, 1, 0),
+                                    calc_score = 
+                                      ifelse(pred_calc > 10, 1, 0)) %>% 
+  mutate(final_suit = temp_score + calc_score + carbon_score) %>% 
+  mutate(final_suit = case_when(final_suit == 1 ~ 0,
+                                final_suit == 2 ~ 0,
+                                final_suit == 3 ~ 1,
+                                final_suit == NA ~ 0)) %>% 
+    as_tibble() %>% 
+    select(x, y, month, final_suit) %>% 
+    rename(!!upper_temp_suit := final_suit)
+  
+  temp_upper_frame <- left_join(temp_upper_frame, int_frame, by = c('x', 'y', 'month'))
+  print(paste('Completed:', ival, 'of', length(temp_upper)))
+}
+  
+# carbon_seq
+
+carbon_frame <- ok_frame
+
+for (i in 1:length(carbon_mid)) {
+  ival <- eval(i)
+  carbon_int <- carbon_mid[ival]
+  carbon_suit <- paste0('trial_upper_temp_', as.character(carbon_int))
+  int_frame <- okanagan_stars %>% mutate(temp_score = 
+                                      ifelse(lswt_celsius < 0 | lswt_celsius > 30, 0, 1),
+                                    carbon_score = 
+                                      ifelse(carbon_conc > carbon_int, 1, 0),
+                                    calc_score = 
+                                      ifelse(pred_calc > 10, 1, 0)) %>% 
+  mutate(final_suit = temp_score + calc_score + carbon_score) %>% 
+  mutate(final_suit = case_when(final_suit == 1 ~ 0,
+                                final_suit == 2 ~ 0,
+                                final_suit == 3 ~ 1,
+                                final_suit == NA ~ 0)) %>% 
+    as_tibble() %>% 
+    select(x, y, month, final_suit) %>% 
+    rename(!!carbon_suit := final_suit)
+  
+  carbon_frame <- left_join(carbon_frame, int_frame, by = c('x', 'y', 'month'))
+  print(paste('Completed:', ival, 'of', length(carbon_mid)))
+}
+  
+# calc_seq
+  
+calcium_frame <- ok_frame
+
+for (i in 1:length(calc_mid)) {
+  ival <- eval(i)
+  calcium_int <- calc_mid[ival]
+  calcium_suit <- paste0('trial_upper_temp_', as.character(calcium_int))
+  int_frame <- okanagan_stars %>% mutate(temp_score = 
+                                      ifelse(lswt_celsius < 0 | lswt_celsius > 30, 0, 1),
+                                    carbon_score = 
+                                      ifelse(carbon_conc > calcium_int, 1, 0),
+                                    calc_score = 
+                                      ifelse(pred_calc > calcium_int, 1, 0)) %>% 
+  mutate(final_suit = temp_score + calc_score + carbon_score) %>% 
+  mutate(final_suit = case_when(final_suit == 1 ~ 0,
+                                final_suit == 2 ~ 0,
+                                final_suit == 3 ~ 1,
+                                final_suit == NA ~ 0)) %>% 
+    as_tibble() %>% 
+    select(x, y, month, final_suit) %>% 
+    rename(!!calcium_suit := final_suit)
+  
+  calcium_frame <- left_join(calcium_frame, int_frame, by = c('x', 'y', 'month'))
+  print(paste('Completed:', ival, 'of', length(calc_mid)))
+}
+
+###
+
+test <- temp_frame %>% select(-spacetime_id) %>%  group_by(x, y, month) %>% 
+  pivot_longer(trial_lower_temp_0:trial_lower_temp_7, 
+               values_to = 'outcome') %>% 
+  ungroup() %>% filter(month == ymd('2019-07-01')) %>% 
+  select(-month)
+
+temp_stars <- st_as_stars(test,
+                          coords = c('x', 'y'),
+                          dims = c('x', 'y', 'name')) %>% 
+  st_set_crs(3005)
+
+###
+
+temp_trial_plot <- ggplot() + geom_stars(data = temp_stars, aes(fill = outcome),
+                      na.action = na.omit) +
+    facet_wrap(~name, nrow = 1) +
+  #scale_fill_paletteer_d("dichromat::BluetoGreen_14",
+   #                 name = '') +
+        theme_void(base_family = extrafont::choose_font('Cantarell Light'), 
+                base_size = 25) +
+    theme(legend.title = element_text(size=25),
+        legend.text = element_text(size=25),
+        strip.text = element_text(size=25))
+
+
+###
+
+
+```
+
 
 # ~~ Supplemental
 
