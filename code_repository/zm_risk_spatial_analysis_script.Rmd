@@ -66,29 +66,6 @@ library(nngeo)
 library(imputeTS)
 ```
 
-# Set up Python
-
-```{r Python setup}
-
-install.packages("reticulate")
-
-library(reticulate)
-
-install_miniconda(path = miniconda_path(), update = T)
-
-reticulate::install_python()
-
-reticulate::virtualenv_create(envname = 'cci_lakes')
-
-use_virtualenv('cci_lakes')
-
-reticulate::py_install(packages = c('xarray', 'dask', 'netCDF4', 'bottleneck', 
-                                    'rasterio', 'pyproj', 'geopandas', 'pandas', 
-                                    'cartopy', 'distributed', 'numpy',
-                                    'datetime'))
-
-```
-
 # Import common files, process
 
 ```{r}
@@ -635,6 +612,8 @@ assembly_frame_bc_subset <- st_intersection(assembly_frame, cci_lakes_bc) %>%
   distinct(x, y)
 
 write_rds(assembly_frame_bc_subset,'cci_assembly_frame/assembly_frame_bc_subset.rds')
+
+test <- readRDS('cci_assembly_frame/assembly_frame_bc_subset.rds')
 
 # ~~~
 
@@ -1359,9 +1338,13 @@ write_rds(calcium_model, 'auxiliary_files/calcium_model.rds')
 
 
 test_join <- test_join %>% 
-#  mutate(pred_calc = predict(calcium_model, pick(calcium_index))) %>% 
+  mutate(pred_calc = predict(calcium_model, pick(calcium_index))) %>% 
   mutate(diff_pred = mean - pred_calc)
 
+
+overall_lake_summary <- test_join %>% select(mean) %>% 
+  summarize(average_calc = mean(mean),
+            sd_calc = sd(mean))
 
 
 calc_model_summary <- test_join %>% summarize(mean_diff_pred = mean(diff_pred),
@@ -1429,7 +1412,7 @@ test <- cci_calcium_joined %>% select(x, y, lswt, chla_mean,
 
 #write_rds(cci_calcium_joined, 'auxiliary_files/cci_calcium_joined.rds')
 
-
+test <- readRDS('auxiliary_files/cci_calcium_joined.rds')
 
 ```
 
@@ -1917,7 +1900,8 @@ for (i in 1:length(calc_mid)) {
 
 ###
 
-test <- temp_frame %>% select(-spacetime_id) %>%  group_by(x, y, month) %>% 
+test <- temp_frame %>% select(-spacetime_id) %>%  
+  group_by(x, y, month) %>% 
   pivot_longer(trial_lower_temp_0:trial_lower_temp_7, 
                values_to = 'outcome') %>% 
   ungroup() %>% filter(month == ymd('2019-07-01')) %>% 
@@ -1949,6 +1933,56 @@ temp_trial_plot <- ggplot() + geom_stars(data = temp_stars, aes(fill = outcome),
 
 
 # ~~ Supplemental
+
+# ! Test accuracy calcium model
+
+```{r}
+
+
+calcium_data <- read_csv('downloads/guerin_et_al_2024_data/dryad/site-date_calcium_985955.csv') %>% 
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+           crs = 4326) %>% 
+  st_transform(crs = 4087)
+
+calcium_data_filtered <- calcium_data %>% 
+  select(DATE, UNITS, MEAN) %>% 
+  rename(date = DATE,
+         units = UNITS,
+         mean = MEAN) %>% 
+    st_intersection(cci_lakes_north_america) %>% 
+      mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>% 
+  st_drop_geometry() %>% 
+  filter(date > dmy('01-01-2002')) %>% 
+  group_by(x, y, date) %>% 
+  mutate(sample_id = cur_group_id())
+
+combined_frame <- readRDS('cci_interpolated/combined_frame.rds')
+
+calcium_data_filtered_bc <- calcium_data %>% 
+  select(DATE, UNITS, MEAN) %>% 
+  rename(date = DATE,
+         units = UNITS,
+         mean = MEAN) %>% 
+    st_intersection(cci_lakes_bc) %>% 
+      mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>% 
+  filter(date > dmy('01-01-2016'))
+
+#
+
+cci_attached <- st_join(cci_lakes_north_america, calcium_data)
+
+calcium_matched_cci <- unique(cci_attached$name)
+
+cci_lakes_poly_matched <- cci_lakes_north_america %>% 
+  filter(name %in% calcium_matched_cci) %>% 
+  select(id, name)
+
+
+```
+
+
 
 ## Process continental data for calcium
 
